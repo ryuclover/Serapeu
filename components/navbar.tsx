@@ -19,6 +19,7 @@ import {
   Home,
   Info,
   Bookmark,
+  BookOpen,
 } from "lucide-react"
 import { useState } from "react"
 import { useAuth } from "@/lib/auth-context"
