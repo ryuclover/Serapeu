@@ -173,10 +173,6 @@ export default function LoginPage() {
             </Link>
           </p>
 
-          {/* Admin tip */}
-          <p className="text-xs text-muted-foreground text-center mt-4 p-3 bg-secondary/50 rounded-lg">
-            Dica: Use &quot;admin&quot; no email para acessar como moderador
-          </p>
         </div>
       </div>
     </div>
