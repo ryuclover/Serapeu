@@ -61,6 +61,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   
   const supabase = createClient()
 
+  useEffect(() => {
+    // Check for auth code in URL (handling redirect from Supabase)
+    const params = new URLSearchParams(window.location.search)
+    const code = params.get('code')
+    if (code) {
+      window.location.href = `/auth/callback${window.location.search}`
+    }
+  }, [])
+
   const refreshData = async () => {
     // Fetch Tutorials
     const { data: tutorialsData } = await supabase
