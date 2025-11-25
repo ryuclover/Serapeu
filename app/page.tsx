@@ -2,7 +2,7 @@
 import { useState } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
-import { TrendingUp, MessageCircle, PlusCircle } from "lucide-react"
+import { TrendingUp, MessageCircle, PlusCircle, BookOpen } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
 import { categories } from "@/lib/types"
 import { TutorialCard } from "@/components/tutorial-card"
