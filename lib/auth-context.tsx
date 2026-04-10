@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
-import type { UserType, Tutorial, TutorialProblem, TutorialRequest, AdminLog } from "./types"
+import type { UserType, Tutorial, TutorialProblem, TutorialRequest, Comment, AdminLog } from "./types"
 import { initialTutorials, initialRequests } from "./types"
 import { createClient } from "@/lib/supabase/client"
 import { toast } from "sonner"
@@ -28,6 +28,26 @@ type SupabaseProfileRow = {
   role: string
   created_at: string
   banned: boolean | null
+}
+
+type SupabaseCommentRow = {
+  id: string
+  tutorial_id: string
+  user_id: string
+  user_name: string
+  content: string
+  created_at: string
+}
+
+type SupabaseProblemRow = {
+  id: string
+  tutorial_id: string
+  user_id: string
+  user_name: string
+  step_number: number | null
+  description: string
+  created_at: string
+  resolved: boolean
 }
 
 type SupabaseError = {
@@ -68,15 +88,15 @@ interface AuthContextType {
   setUsers: React.Dispatch<React.SetStateAction<UserType[]>>
   adminLogs: AdminLog[]
   addAdminLog: (log: Omit<AdminLog, "id" | "createdAt">) => void
-  deleteComment: (tutorialId: string, commentId: string) => void
+  createComment: (tutorialId: string, content: string) => Promise<void>
+  deleteComment: (tutorialId: string, commentId: string) => Promise<void>
+  reportProblem: (problem: Omit<TutorialProblem, "id" | "createdAt" | "resolved">) => Promise<void>
   banUser: (userId: string) => void
   unbanUser: (userId: string) => void
   promoteToAdmin: (userId: string) => void
   demoteFromAdmin: (userId: string) => void
   approveTutorial: (tutorialId: string) => Promise<void>
   deleteTutorial: (tutorialId: string) => Promise<void>
-  createComment: (tutorialId: string, content: string) => Promise<void>
-  deleteComment: (tutorialId: string, commentId: string) => Promise<void>
   incrementTutorialUpvotes: (tutorialId: string) => Promise<void>
   toggleSaveTutorial: (tutorialId: string) => Promise<void>
   refreshData: () => Promise<void>
@@ -138,22 +158,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }))
       setTutorials(formattedTutorials)
     } else {
-      const { data: commentsData, error: commentsError } = await supabase
-        .from('comments')
-        .select('*')
-
-      const commentsByTutorial = (commentsData || []).reduce<Record<string, Comment[]>>((acc, comment) => {
-        if (!acc[comment.tutorialId]) {
-          acc[comment.tutorialId] = []
-        }
-        acc[comment.tutorialId].push(comment)
-        return acc
-      }, {})
-
-      if (commentsError) {
-        console.warn('Erro ao carregar comentários:', commentsError)
-      }
-
       const formattedTutorials: Tutorial[] = ((tutorialsData || []) as SupabaseTutorialRow[]).map((t) => {
         const profile = Array.isArray(t.profiles) ? t.profiles[0] : t.profiles
 
@@ -168,10 +172,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           createdAt: new Date(t.created_at).toLocaleDateString('pt-BR'),
           approved: t.approved,
           upvotes: t.upvotes ?? 0,
-          comments: commentsByTutorial[t.id] ?? [],
+          comments: [],
         }
       })
       setTutorials(formattedTutorials)
+    }
+
+    // Fetch Comments
+    const { data: commentsData, error: commentsError } = await supabase.from('comments').select('*')
+    const commentsByTutorial = (commentsData || []).reduce<Record<string, Comment[]>>((acc, comment: any) => {
+      if (!acc[comment.tutorial_id]) acc[comment.tutorial_id] = []
+      acc[comment.tutorial_id].push({
+        id: comment.id,
+        tutorialId: comment.tutorial_id,
+        userId: comment.user_id,
+        userName: comment.user_name,
+        content: comment.content,
+        createdAt: new Date(comment.created_at).toLocaleDateString('pt-BR'),
+      })
+      return acc
+    }, {})
+
+    if (commentsError) {
+      console.warn('Erro ao carregar comentários:', commentsError)
+    }
+
+    setTutorials((prev) =>
+      prev.map((tutorial) => ({
+        ...tutorial,
+        comments: commentsByTutorial[tutorial.id] || tutorial.comments || [],
+      })),
+    )
+
+    // Fetch Problems
+    const { data: problemsData, error: problemsError } = await supabase.from('tutorial_problems').select('*')
+    if (problemsError) {
+      console.warn('Erro ao carregar problemas:', problemsError)
+    } else {
+      const formattedProblems: TutorialProblem[] = (problemsData || []).map((problem: any) => ({
+        id: problem.id,
+        tutorialId: problem.tutorial_id,
+        userId: problem.user_id,
+        userName: problem.user_name,
+        stepNumber: problem.step_number,
+        description: problem.description,
+        createdAt: new Date(problem.created_at).toLocaleDateString('pt-BR'),
+        resolved: problem.resolved,
+      }))
+      setProblems(formattedProblems)
     }
 
     // Fetch Requests
@@ -493,30 +541,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    const newComment: Comment = {
-      id: Date.now().toString(),
-      tutorialId,
-      userId: user.id,
-      userName: user.name,
-      content,
-      createdAt: new Date().toLocaleDateString('pt-BR'),
-    }
-
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('comments')
       .insert({
-        id: newComment.id,
-        tutorial_id: newComment.tutorialId,
-        user_id: newComment.userId,
-        user_name: newComment.userName,
-        content: newComment.content,
-        created_at: new Date().toISOString(),
+        tutorial_id: tutorialId,
+        user_id: user.id,
+        user_name: user.name,
+        content,
       })
+      .select('*')
+      .single()
 
-    if (error) {
+    if (error || !data) {
       console.error('Erro ao criar comentário:', error)
       toast.error('Não foi possível postar o comentário.')
       return
+    }
+
+    const newComment: Comment = {
+      id: data.id,
+      tutorialId: data.tutorial_id,
+      userId: data.user_id,
+      userName: data.user_name,
+      content: data.content,
+      createdAt: new Date(data.created_at).toLocaleDateString('pt-BR'),
     }
 
     addCommentToTutorial(tutorialId, newComment)
@@ -546,6 +594,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return t
       }),
     )
+  }
+
+  const reportProblem = async (problem: Omit<TutorialProblem, "id" | "createdAt" | "resolved">) => {
+    if (!user) {
+      toast.error('Você precisa estar logado para relatar um problema.')
+      return
+    }
+
+    const { data, error } = await supabase
+      .from('tutorial_problems')
+      .insert({
+        tutorial_id: problem.tutorialId,
+        user_id: problem.userId,
+        user_name: problem.userName,
+        step_number: problem.stepNumber,
+        description: problem.description,
+        resolved: false,
+      })
+      .select('*')
+      .single()
+
+    if (error || !data) {
+      console.error('Erro ao relatar problema:', error)
+      toast.error('Não foi possível relatar o problema.')
+      return
+    }
+
+    setProblems((prev) => [
+      ...prev,
+      {
+        id: data.id,
+        tutorialId: data.tutorial_id,
+        userId: data.user_id,
+        userName: data.user_name,
+        stepNumber: data.step_number,
+        description: data.description,
+        createdAt: new Date(data.created_at).toLocaleDateString('pt-BR'),
+        resolved: data.resolved,
+      },
+    ])
   }
 
   const banUser = (userId: string) => {
@@ -587,6 +675,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         addAdminLog,
         createComment,
         deleteComment,
+        reportProblem,
         banUser,
         unbanUser,
         promoteToAdmin,

@@ -8,7 +8,7 @@ import type { TutorialProblem } from "@/lib/types"
 export default function TutorialPage() {
   const params = useParams()
   const id = params.id as string
-  const { tutorials, user, problems, setProblems, incrementTutorialUpvotes, createComment } = useAuth()
+  const { tutorials, user, problems, setProblems, incrementTutorialUpvotes, createComment, reportProblem } = useAuth()
 
   const tutorial = tutorials.find((t) => t.id === id) || null
 
@@ -24,19 +24,28 @@ export default function TutorialPage() {
     }
   }
 
-  const handleReportProblem = (problem: Omit<TutorialProblem, "id" | "createdAt" | "resolved">) => {
-    const newProblem: TutorialProblem = {
-      ...problem,
-      id: Date.now().toString(),
-      createdAt: new Date().toLocaleDateString("pt-BR"),
-      resolved: false,
+  const handleReportProblem = async (problem: Omit<TutorialProblem, "id" | "createdAt" | "resolved">) => {
+    if (!user) {
+      return
     }
-    setProblems([...problems, newProblem])
+
+    try {
+      await reportProblem(problem)
+    } catch (error) {
+      console.error('Erro ao relatar problema:', error)
+    }
   }
 
   const handleCreateComment = async (content: string) => {
-    if (!tutorial) return
-    await createComment(tutorial.id, content)
+    if (!tutorial) {
+      return
+    }
+
+    try {
+      await createComment(tutorial.id, content)
+    } catch (error) {
+      console.error('Erro ao criar comentário:', error)
+    }
   }
 
   return (
