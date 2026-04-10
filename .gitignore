@@ -17,3 +17,6 @@ out/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Manual pendências
+pendencias_manuais.txt
