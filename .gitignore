@@ -13,10 +13,9 @@ out/
 # Env
 .env
 .env.*.local
+.env.local
+.tsbuildinfo
 
 # OS files
 .DS_Store
 Thumbs.db
-
-# Manual pendências
-pendencias_manuais.txt
