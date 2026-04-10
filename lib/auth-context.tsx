@@ -636,20 +636,64 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     ])
   }
 
-  const banUser = (userId: string) => {
+  const banUser = async (userId: string) => {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ banned: true })
+      .eq('id', userId)
+
+    if (error) {
+      console.error('Erro ao banir usuário:', error)
+      toast.error('Não foi possível banir o usuário.')
+      return
+    }
+
     setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, banned: true } : u)))
   }
 
-  const unbanUser = (userId: string) => {
+  const unbanUser = async (userId: string) => {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ banned: false })
+      .eq('id', userId)
+
+    if (error) {
+      console.error('Erro ao desbanir usuário:', error)
+      toast.error('Não foi possível desbanir o usuário.')
+      return
+    }
+
     setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, banned: false } : u)))
   }
 
-  const promoteToAdmin = (userId: string) => {
-    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, role: "ADMIN" as const } : u)))
+  const promoteToAdmin = async (userId: string) => {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ role: 'ADMIN' })
+      .eq('id', userId)
+
+    if (error) {
+      console.error('Erro ao promover usuário a admin:', error)
+      toast.error('Não foi possível promover o usuário.')
+      return
+    }
+
+    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, role: 'ADMIN' as const } : u)))
   }
 
-  const demoteFromAdmin = (userId: string) => {
-    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, role: "USER" as const } : u)))
+  const demoteFromAdmin = async (userId: string) => {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ role: 'USER' })
+      .eq('id', userId)
+
+    if (error) {
+      console.error('Erro ao rebaixar usuário de admin:', error)
+      toast.error('Não foi possível rebaixar o usuário.')
+      return
+    }
+
+    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, role: 'USER' as const } : u)))
   }
 
   return (
