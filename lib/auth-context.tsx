@@ -305,6 +305,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         
         const savedIds = savedData ? savedData.map((s: any) => s.tutorial_id) : []
 
+        // Fetch voted tutorials
+        const { data: votedData } = await supabase
+          .from('tutorial_votes')
+          .select('tutorial_id')
+          .eq('user_id', session.user.id)
+
+        const votedIds = votedData ? votedData.map((v: any) => v.tutorial_id) : []
+
         setUser({
           id: session.user.id,
           email: session.user.email!,
@@ -312,7 +320,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           role: session.user.user_metadata.role || "USER",
           createdAt: session.user.created_at,
           banned: false,
-          savedTutorials: savedIds
+          savedTutorials: savedIds,
+          votedTutorials: votedIds,
         })
       }
     })
@@ -328,6 +337,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         
         const savedIds = savedData ? savedData.map((s: any) => s.tutorial_id) : []
 
+        const { data: votedData } = await supabase
+          .from('tutorial_votes')
+          .select('tutorial_id')
+          .eq('user_id', session.user.id)
+
+        const votedIds = votedData ? votedData.map((v: any) => v.tutorial_id) : []
+
         setUser({
           id: session.user.id,
           email: session.user.email!,
@@ -335,7 +351,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           role: session.user.user_metadata.role || "USER",
           createdAt: session.user.created_at,
           banned: false,
-          savedTutorials: savedIds
+          savedTutorials: savedIds,
+          votedTutorials: votedIds,
         })
       } else {
         setUser(null)
@@ -436,22 +453,56 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const incrementTutorialUpvotes = async (tutorialId: string) => {
-    const currentTutorial = tutorials.find((tutorial) => tutorial.id === tutorialId)
+    if (!user) {
+      toast.error('Você precisa estar logado para votar.')
+      return
+    }
 
+    const currentTutorial = tutorials.find((tutorial) => tutorial.id === tutorialId)
     if (!currentTutorial) {
       return
     }
 
-    const nextUpvotes = currentTutorial.upvotes + 1
+    const hasVoted = user.votedTutorials?.includes(tutorialId)
+    const nextUpvotes = hasVoted ? currentTutorial.upvotes - 1 : currentTutorial.upvotes + 1
+    const nextVotedTutorials = hasVoted
+      ? user.votedTutorials?.filter((id) => id !== tutorialId) ?? []
+      : [...(user.votedTutorials || []), tutorialId]
+
     updateTutorialInState(tutorialId, (tutorial) => ({ ...tutorial, upvotes: nextUpvotes }))
+    setUser({ ...user, votedTutorials: nextVotedTutorials })
 
-    const { error } = await supabase
-      .from('tutorials')
-      .update({ upvotes: nextUpvotes })
-      .eq('id', tutorialId)
+    try {
+      if (hasVoted) {
+        const { error } = await supabase
+          .from('tutorial_votes')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('tutorial_id', tutorialId)
 
-    if (error) {
+        if (error) throw error
+        const { error: updateError } = await supabase
+          .from('tutorials')
+          .update({ upvotes: nextUpvotes })
+          .eq('id', tutorialId)
+
+        if (updateError) throw updateError
+      } else {
+        const { error } = await supabase
+          .from('tutorial_votes')
+          .insert({ user_id: user.id, tutorial_id: tutorialId })
+
+        if (error) throw error
+        const { error: updateError } = await supabase
+          .from('tutorials')
+          .update({ upvotes: nextUpvotes })
+          .eq('id', tutorialId)
+
+        if (updateError) throw updateError
+      }
+    } catch (error) {
       updateTutorialInState(tutorialId, (tutorial) => ({ ...tutorial, upvotes: currentTutorial.upvotes }))
+      setUser({ ...user, votedTutorials: user.votedTutorials || [] })
       toast.error('Não foi possível registrar o voto.')
       throw error
     }

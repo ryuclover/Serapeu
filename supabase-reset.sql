@@ -219,6 +219,120 @@ create policy "Users can unsave tutorials"
   on public.saved_tutorials for delete
   using (auth.uid() = user_id);
 
+-- COMMENTS
+create table if not exists public.comments (
+  id uuid default gen_random_uuid() primary key,
+  tutorial_id uuid not null references public.tutorials(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  user_name text not null,
+  content text not null,
+  created_at timestamptz not null default timezone('utc'::text, now())
+);
+
+alter table public.comments enable row level security;
+
+drop policy if exists "Users can view comments" on public.comments;
+drop policy if exists "Users can insert comments" on public.comments;
+drop policy if exists "Users can delete their comments" on public.comments;
+drop policy if exists "Admins can manage comments" on public.comments;
+
+create policy "Users can view comments"
+  on public.comments for select
+  using (true);
+
+create policy "Users can insert comments"
+  on public.comments for insert
+  with check (auth.uid() = user_id);
+
+create policy "Users can delete their comments"
+  on public.comments for delete
+  using (auth.uid() = user_id);
+
+create policy "Admins can manage comments"
+  on public.comments for all
+  using (
+    exists (
+      select 1 from public.profiles p where p.id = auth.uid() and p.role = 'ADMIN'
+    )
+  )
+  with check (
+    exists (
+      select 1 from public.profiles p where p.id = auth.uid() and p.role = 'ADMIN'
+    )
+  );
+
+-- PROBLEM REPORTS
+create table if not exists public.tutorial_problems (
+  id uuid default gen_random_uuid() primary key,
+  tutorial_id uuid not null references public.tutorials(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  user_name text not null,
+  step_number integer null,
+  description text not null,
+  resolved boolean not null default false,
+  created_at timestamptz not null default timezone('utc'::text, now())
+);
+
+alter table public.tutorial_problems enable row level security;
+
+drop policy if exists "Users can view problems" on public.tutorial_problems;
+drop policy if exists "Users can insert problems" on public.tutorial_problems;
+drop policy if exists "Users can update their problems" on public.tutorial_problems;
+drop policy if exists "Admins can manage problems" on public.tutorial_problems;
+
+create policy "Users can view problems"
+  on public.tutorial_problems for select
+  using (true);
+
+create policy "Users can insert problems"
+  on public.tutorial_problems for insert
+  with check (auth.uid() = user_id);
+
+create policy "Users can update their problems"
+  on public.tutorial_problems for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create policy "Admins can manage problems"
+  on public.tutorial_problems for all
+  using (
+    exists (
+      select 1 from public.profiles p where p.id = auth.uid() and p.role = 'ADMIN'
+    )
+  )
+  with check (
+    exists (
+      select 1 from public.profiles p where p.id = auth.uid() and p.role = 'ADMIN'
+    )
+  );
+
+-- TUTORIAL VOTES
+create table if not exists public.tutorial_votes (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  tutorial_id uuid not null references public.tutorials(id) on delete cascade,
+  created_at timestamptz not null default timezone('utc'::text, now()),
+  unique(user_id, tutorial_id)
+);
+
+alter table public.tutorial_votes enable row level security;
+
+drop policy if exists "Users can view their own tutorial votes" on public.tutorial_votes;
+drop policy if exists "Users can vote tutorials" on public.tutorial_votes;
+drop policy if exists "Users can unvote tutorials" on public.tutorial_votes;
+
+create policy "Users can view their own tutorial votes"
+  on public.tutorial_votes for select
+  using (auth.uid() = user_id);
+
+create policy "Users can vote tutorials"
+  on public.tutorial_votes for insert
+  with check (auth.uid() = user_id);
+
+create policy "Users can unvote tutorials"
+  on public.tutorial_votes for delete
+  using (auth.uid() = user_id);
+
 -- INDEXES
 create index if not exists tutorials_author_id_idx on public.tutorials(author_id);
 create index if not exists tutorials_approved_idx on public.tutorials(approved);
@@ -226,3 +340,5 @@ create index if not exists tutorials_category_idx on public.tutorials(category);
 create index if not exists tutorial_requests_user_id_idx on public.tutorial_requests(user_id);
 create index if not exists saved_tutorials_user_id_idx on public.saved_tutorials(user_id);
 create index if not exists saved_tutorials_tutorial_id_idx on public.saved_tutorials(tutorial_id);
+create index if not exists tutorial_votes_user_id_idx on public.tutorial_votes(user_id);
+create index if not exists tutorial_votes_tutorial_id_idx on public.tutorial_votes(tutorial_id);
