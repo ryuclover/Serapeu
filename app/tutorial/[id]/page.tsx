@@ -8,7 +8,7 @@ import type { TutorialProblem } from "@/lib/types"
 export default function TutorialPage() {
   const params = useParams()
   const id = params.id as string
-  const { tutorials, user, problems, setProblems, incrementTutorialUpvotes } = useAuth()
+  const { tutorials, user, problems, setProblems, incrementTutorialUpvotes, createComment } = useAuth()
 
   const tutorial = tutorials.find((t) => t.id === id) || null
 
@@ -34,6 +34,11 @@ export default function TutorialPage() {
     setProblems([...problems, newProblem])
   }
 
+  const handleCreateComment = async (content: string) => {
+    if (!tutorial) return
+    await createComment(tutorial.id, content)
+  }
+
   return (
     <TutorialTemplate
       tutorial={tutorial}
@@ -41,6 +46,7 @@ export default function TutorialPage() {
       onUpvote={handleUpvote}
       problems={problems}
       onReportProblem={handleReportProblem}
+      onCreateComment={handleCreateComment}
     />
   )
 }
