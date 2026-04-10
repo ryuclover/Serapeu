@@ -93,6 +93,7 @@ interface AuthContextType {
   reportProblem: (problem: Omit<TutorialProblem, "id" | "createdAt" | "resolved">) => Promise<void>
   resolveProblem: (problemId: string) => Promise<void>
   deleteProblem: (problemId: string) => Promise<void>
+  deleteRequest: (requestId: string) => Promise<void>
   banUser: (userId: string) => void
   unbanUser: (userId: string) => void
   promoteToAdmin: (userId: string) => void
@@ -719,6 +720,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProblems((prev) => prev.filter((p) => p.id !== problemId))
   }
 
+  const deleteRequest = async (requestId: string) => {
+    const { error } = await supabase
+      .from('tutorial_requests')
+      .delete()
+      .eq('id', requestId)
+
+    if (error) {
+      console.error('Erro ao deletar requisição:', error)
+      toast.error('Não foi possível excluir a requisição.')
+      return
+    }
+
+    setRequests((prev) => prev.filter((request) => request.id !== requestId))
+  }
+
   const banUser = async (userId: string) => {
     const { error } = await supabase
       .from('profiles')
@@ -812,6 +828,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         incrementTutorialUpvotes,
         resolveProblem,
         deleteProblem,
+        deleteRequest,
         refreshData,
       }}
     >

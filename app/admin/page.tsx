@@ -47,6 +47,7 @@ export default function AdminPage() {
     deleteComment,
     resolveProblem,
     deleteProblem,
+    deleteRequest,
     banUser,
     unbanUser,
     promoteToAdmin,
@@ -242,9 +243,9 @@ export default function AdminPage() {
     }
   }
 
-  const handleDeleteRequest = (requestId: string) => {
+  const handleDeleteRequest = async (requestId: string) => {
     const request = requests.find((r) => r.id === requestId)
-    setRequests(requests.filter((r) => r.id !== requestId))
+    await deleteRequest(requestId)
     if (request) {
       addAdminLog({
         adminId: user.id,
