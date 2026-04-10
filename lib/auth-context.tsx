@@ -98,6 +98,7 @@ interface AuthContextType {
   unbanUser: (userId: string) => void
   promoteToAdmin: (userId: string) => void
   demoteFromAdmin: (userId: string) => void
+  deleteUser: (userId: string) => Promise<void>
   approveTutorial: (tutorialId: string) => Promise<void>
   deleteTutorial: (tutorialId: string) => Promise<void>
   incrementTutorialUpvotes: (tutorialId: string) => Promise<void>
@@ -795,6 +796,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, role: 'USER' as const } : u)))
   }
 
+  const deleteUser = async (userId: string) => {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ banned: true, name: 'Usuário excluído', role: 'USER' })
+      .eq('id', userId)
+
+    if (error) {
+      console.error('Erro ao excluir usuário:', error)
+      toast.error('Não foi possível excluir o usuário.')
+      return
+    }
+
+    setUsers((prev) =>
+      prev.map((u) =>
+        u.id === userId
+          ? { ...u, banned: true, name: 'Usuário excluído', role: 'USER' as const }
+          : u,
+      ),
+    )
+  }
+
   return (
     <AuthContext.Provider
       value={{
@@ -823,6 +845,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         unbanUser,
         promoteToAdmin,
         demoteFromAdmin,
+        deleteUser,
         approveTutorial,
         deleteTutorial,
         incrementTutorialUpvotes,
