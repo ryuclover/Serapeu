@@ -4,6 +4,7 @@ import type React from "react"
 
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
 import type { UserType, Tutorial, TutorialProblem, TutorialRequest, AdminLog } from "./types"
+import { initialTutorials, initialRequests } from "./types"
 import { createClient } from "@/lib/supabase/client"
 import { toast } from "sonner"
 
@@ -127,11 +128,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return
       }
 
-      if (!isProfilesPolicyRecursion(tutorialsError as SupabaseError)) {
-        console.warn('Erro ao carregar tutoriais:', tutorialsError)
-        toast.error('Não foi possível carregar os tutoriais.')
-      }
-      setTutorials([])
+      console.warn('Erro ao carregar tutoriais:', tutorialsError)
+      toast.error('Não foi possível carregar os tutoriais.')
+      const formattedTutorials: Tutorial[] = initialTutorials.map((t) => ({
+        ...t,
+        createdAt: t.createdAt || new Date().toLocaleDateString('pt-BR'),
+      }))
+      setTutorials(formattedTutorials)
     } else {
       const formattedTutorials: Tutorial[] = ((tutorialsData || []) as SupabaseTutorialRow[]).map((t) => {
         const profile = Array.isArray(t.profiles) ? t.profiles[0] : t.profiles
@@ -177,10 +180,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return
       }
 
-      if (!isProfilesPolicyRecursion(requestsError as SupabaseError)) {
-        console.warn('Erro ao carregar requisições:', requestsError)
-      }
-      setRequests([])
+      console.warn('Erro ao carregar requisições:', requestsError)
+      setRequests(initialRequests)
     } else if (requestsData) {
       const formattedRequests: TutorialRequest[] = requestsData.map((r: any) => ({
         id: r.id,
@@ -208,7 +209,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!isProfilesPolicyRecursion(usersError as SupabaseError)) {
         console.warn('Erro ao carregar usuários:', usersError)
       }
-      setUsers([])
+      setUsers(initialUsers)
     } else if (usersData) {
       const formattedUsers: UserType[] = (usersData as SupabaseProfileRow[]).map((u) => ({
         id: u.id,
