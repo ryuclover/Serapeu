@@ -45,6 +45,8 @@ export default function AdminPage() {
     adminLogs,
     addAdminLog,
     deleteComment,
+    resolveProblem,
+    deleteProblem,
     banUser,
     unbanUser,
     promoteToAdmin,
@@ -210,9 +212,9 @@ export default function AdminPage() {
     }
   }
 
-  const handleResolveProblem = (problemId: string) => {
+  const handleResolveProblem = async (problemId: string) => {
     const problem = problems.find((p) => p.id === problemId)
-    setProblems(problems.map((p) => (p.id === problemId ? { ...p, resolved: true } : p)))
+    await resolveProblem(problemId)
     if (problem) {
       addAdminLog({
         adminId: user.id,
@@ -225,9 +227,9 @@ export default function AdminPage() {
     }
   }
 
-  const handleDeleteProblem = (problemId: string) => {
+  const handleDeleteProblem = async (problemId: string) => {
     const problem = problems.find((p) => p.id === problemId)
-    setProblems(problems.filter((p) => p.id !== problemId))
+    await deleteProblem(problemId)
     if (problem) {
       addAdminLog({
         adminId: user.id,
