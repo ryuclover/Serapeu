@@ -4,9 +4,37 @@ import type React from "react"
 
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
 import type { UserType, Tutorial, TutorialProblem, TutorialRequest, AdminLog } from "./types"
-import { initialTutorials, initialRequests } from "./types"
 import { createClient } from "@/lib/supabase/client"
 import { toast } from "sonner"
+
+type SupabaseTutorialRow = {
+  id: string
+  title: string
+  description: string
+  steps: string[]
+  author_id: string
+  category: string
+  created_at: string
+  approved: boolean
+  upvotes: number
+  profiles?: { name?: string } | { name?: string }[] | null
+}
+
+type SupabaseProfileRow = {
+  id: string
+  email: string
+  name: string
+  role: string
+  created_at: string
+  banned: boolean | null
+}
+
+type SupabaseError = {
+  code?: string
+  message?: string
+}
+
+const isProfilesPolicyRecursion = (error: SupabaseError | null | undefined) => error?.code === "42P17"
 
 const initialUsers: UserType[] = [
   { id: "1", email: "bob@expert.com", name: "Bob Expert", role: "USER", createdAt: "01/01/2023", banned: false },
@@ -44,6 +72,9 @@ interface AuthContextType {
   unbanUser: (userId: string) => void
   promoteToAdmin: (userId: string) => void
   demoteFromAdmin: (userId: string) => void
+  approveTutorial: (tutorialId: string) => Promise<void>
+  deleteTutorial: (tutorialId: string) => Promise<void>
+  incrementTutorialUpvotes: (tutorialId: string) => Promise<void>
   toggleSaveTutorial: (tutorialId: string) => Promise<void>
   refreshData: () => Promise<void>
 }
@@ -72,35 +103,85 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshData = async () => {
     // Fetch Tutorials
-    const { data: tutorialsData } = await supabase
+    let { data: tutorialsData, error: tutorialsError } = await supabase
       .from('tutorials')
       .select('*, profiles(name)')
       .order('created_at', { ascending: false })
 
-    if (tutorialsData) {
-      const formattedTutorials: Tutorial[] = tutorialsData.map((t: any) => ({
-        id: t.id,
-        title: t.title,
-        description: t.description,
-        steps: t.steps,
-        authorId: t.author_id,
-        authorName: t.profiles?.name || 'Usuário',
-        category: t.category,
-        createdAt: new Date(t.created_at).toLocaleDateString('pt-BR'),
-        approved: t.approved,
-        upvotes: t.upvotes,
-        comments: []
-      }))
+    // Fallback: se houver recursao de policy em profiles, busca sem join.
+    if ((tutorialsError as SupabaseError | null)?.code === '42P17') {
+      const fallback = await supabase
+        .from('tutorials')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      tutorialsData = fallback.data
+      tutorialsError = fallback.error
+    }
+
+    if (tutorialsError) {
+      if (isProfilesPolicyRecursion(tutorialsError as SupabaseError)) {
+        setTutorials([])
+        setRequests([])
+        setUsers([])
+        return
+      }
+
+      if (!isProfilesPolicyRecursion(tutorialsError as SupabaseError)) {
+        console.warn('Erro ao carregar tutoriais:', tutorialsError)
+        toast.error('Não foi possível carregar os tutoriais.')
+      }
+      setTutorials([])
+    } else {
+      const formattedTutorials: Tutorial[] = ((tutorialsData || []) as SupabaseTutorialRow[]).map((t) => {
+        const profile = Array.isArray(t.profiles) ? t.profiles[0] : t.profiles
+
+        return {
+          id: t.id,
+          title: t.title,
+          description: t.description,
+          steps: t.steps || [],
+          authorId: t.author_id,
+          authorName: profile?.name || 'Usuário',
+          category: t.category,
+          createdAt: new Date(t.created_at).toLocaleDateString('pt-BR'),
+          approved: t.approved,
+          upvotes: t.upvotes ?? 0,
+          comments: [],
+        }
+      })
       setTutorials(formattedTutorials)
     }
 
     // Fetch Requests
-    const { data: requestsData } = await supabase
+    let { data: requestsData, error: requestsError } = await supabase
       .from('tutorial_requests')
       .select('*, profiles(name)')
       .order('created_at', { ascending: false })
 
-    if (requestsData) {
+    // Fallback: se houver recursao de policy em profiles, busca sem join.
+    if ((requestsError as SupabaseError | null)?.code === '42P17') {
+      const fallback = await supabase
+        .from('tutorial_requests')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      requestsData = fallback.data
+      requestsError = fallback.error
+    }
+
+    if (requestsError) {
+      if (isProfilesPolicyRecursion(requestsError as SupabaseError)) {
+        setRequests([])
+        setUsers([])
+        return
+      }
+
+      if (!isProfilesPolicyRecursion(requestsError as SupabaseError)) {
+        console.warn('Erro ao carregar requisições:', requestsError)
+      }
+      setRequests([])
+    } else if (requestsData) {
       const formattedRequests: TutorialRequest[] = requestsData.map((r: any) => ({
         id: r.id,
         userId: r.user_id,
@@ -112,25 +193,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         upvotes: r.upvotes,
         upvotedBy: r.upvoted_by || [],
         answered: r.answered,
-        answeredTutorialId: r.answered_tutorial_id
+        answeredTutorialId: r.answered_tutorial_id,
       }))
       setRequests(formattedRequests)
     }
 
     // Fetch Users
-    const { data: usersData } = await supabase
+    const { data: usersData, error: usersError } = await supabase
       .from('profiles')
       .select('*')
       .order('created_at', { ascending: false })
 
-    if (usersData) {
-      const formattedUsers: UserType[] = usersData.map((u: any) => ({
+    if (usersError) {
+      if (!isProfilesPolicyRecursion(usersError as SupabaseError)) {
+        console.warn('Erro ao carregar usuários:', usersError)
+      }
+      setUsers([])
+    } else if (usersData) {
+      const formattedUsers: UserType[] = (usersData as SupabaseProfileRow[]).map((u) => ({
         id: u.id,
         email: u.email,
         name: u.name,
-        role: u.role,
+        role: u.role as "USER" | "ADMIN",
         createdAt: new Date(u.created_at).toLocaleDateString('pt-BR'),
-        banned: u.banned
+        banned: Boolean(u.banned),
       }))
       setUsers(formattedUsers)
     }
@@ -246,6 +332,60 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     await supabase.auth.signOut()
     setUser(null)
+  }
+
+  const updateTutorialInState = (tutorialId: string, updater: (tutorial: Tutorial) => Tutorial) => {
+    setTutorials((prev) => prev.map((tutorial) => (tutorial.id === tutorialId ? updater(tutorial) : tutorial)))
+  }
+
+  const approveTutorial = async (tutorialId: string) => {
+    const { error } = await supabase
+      .from('tutorials')
+      .update({ approved: true })
+      .eq('id', tutorialId)
+
+    if (error) {
+      toast.error('Não foi possível aprovar o tutorial.')
+      throw error
+    }
+
+    updateTutorialInState(tutorialId, (tutorial) => ({ ...tutorial, approved: true }))
+  }
+
+  const deleteTutorial = async (tutorialId: string) => {
+    const { error } = await supabase
+      .from('tutorials')
+      .delete()
+      .eq('id', tutorialId)
+
+    if (error) {
+      toast.error('Não foi possível excluir o tutorial.')
+      throw error
+    }
+
+    setTutorials((prev) => prev.filter((tutorial) => tutorial.id !== tutorialId))
+  }
+
+  const incrementTutorialUpvotes = async (tutorialId: string) => {
+    const currentTutorial = tutorials.find((tutorial) => tutorial.id === tutorialId)
+
+    if (!currentTutorial) {
+      return
+    }
+
+    const nextUpvotes = currentTutorial.upvotes + 1
+    updateTutorialInState(tutorialId, (tutorial) => ({ ...tutorial, upvotes: nextUpvotes }))
+
+    const { error } = await supabase
+      .from('tutorials')
+      .update({ upvotes: nextUpvotes })
+      .eq('id', tutorialId)
+
+    if (error) {
+      updateTutorialInState(tutorialId, (tutorial) => ({ ...tutorial, upvotes: currentTutorial.upvotes }))
+      toast.error('Não foi possível registrar o voto.')
+      throw error
+    }
   }
 
   const toggleSaveTutorial = async (tutorialId: string) => {
@@ -370,6 +510,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         unbanUser,
         promoteToAdmin,
         demoteFromAdmin,
+        approveTutorial,
+        deleteTutorial,
+        incrementTutorialUpvotes,
         refreshData,
       }}
     >
