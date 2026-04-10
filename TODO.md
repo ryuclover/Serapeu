@@ -1,239 +1,164 @@
 # 📋 TODO — Serapeu Development Roadmap
 
-> **Branch ativa:** feature/supabase-migration
+> **Branch ativa:** feature/Glados
 > **Atualizado:** 10/04/2026
 > **Status geral:** MVP 60% completo
-> Priorizado por impacto e dependências
+> Priorizado por impacto técnico e dependências diretas
 
 ---
 
-## 🚧 Plano Atual de Trabalho
+## 🚧 Visão Geral
 
-1. Validar e corrigir o RLS do Supabase para `profiles` (erro 42P17).
-2. Confirmar que o app carrega tutoriais e requisições sem 500.
-3. Completar migração de operações de tutorial para Supabase.
-4. Migrar as requisições de tutorial para Supabase.
-5. Implementar CRUD de comentários e problemas.
+A principal prioridade é estabilizar a camada de dados Supabase e remover dependências de mock data em produção. Em seguida vem o CRUD administrativo, depois as funcionalidades de engajamento e, por fim, os recursos de polimento.
 
 ---
 
----
+## 🔴 CRÍTICO — Core Data & Supabase
 
-## 🔴 CRÍTICO — Core Data Persistence
+Essas tarefas são blockers para o app funcionar corretamente em produção.
 
-Essas tarefas são **blockers** para o resto do projeto funcionar.
+- [ ] **1. Corrigir RLS e integração com `profiles`**
+  - Ajustar políticas RLS para `profiles`
+  - Garantir que `tutorials` e `tutorial_requests` possam buscar `profiles(name)` sem erro 42P17
+  - Remover fallback de dados de mock quando o banco falhar
 
-- [ ] **1. Migrar tutoriais para Supabase**
-  - Mover de `initialTutorials` para queries ao banco
-  - Criar tabela `tutorials` com schema completo
-  - CRUD (Create, Read, Update, Delete)
-  - Impacto: **MÁXIMO** — tudo depende disso
+- [ ] **2. Migrar tutoriais para Supabase**
+  - Parar de depender de `initialTutorials`
+  - Garantir leitura e escrita em `tutorials`
+  - Mapear `authorName` a partir de `profiles` ou session metadata
+  - Suportar `approved`, `upvotes`, `steps`, `category`
 
-- [ ] **2. Migrar requisições para Supabase**
-  - Mover de `initialRequests` para queries ao banco
-  - Criar tabela `tutorial_requests`
-  - Upvote/downvote persistente
-  - Dependência: Após #1
+- [ ] **3. Migrar requisições para Supabase**
+  - Substituir `initialRequests` por `tutorial_requests`
+  - Persistir `upvoted_by`, `answered`, `answered_tutorial_id`
+  - Remover fallback de mock em produção
 
-- [ ] **3. Implementar CRUD de comentários**
-  - Criar tabela `comments` no Supabase
-  - Componente de formulário de comentário
-  - Listar comentários em tutorial
-  - Deletar comentário (autor + admin)
-  - Dependência: Após #1
-
-- [ ] **4. Persistir upvotes em Supabase**
-  - Criar tabela `upvotes` (userId + tutorialId)
-  - Incrementar/decrementar com save em DB
-  - Remover mock do context
-  - Impacto: **CRÍTICO** para dados corretos
+- [ ] **4. Persistir comentários em Supabase**
+  - Criar tabela `comments`
+  - Implementar comentário por tutorial
+  - Listar comentários no template de tutorial
+  - Permitir exclusão por autor e admin
 
 - [ ] **5. Persistir problemas em Supabase**
   - Criar tabela `tutorial_problems`
-  - Salvar relatos do usuário
-  - Listar problemas reportados (admin)
-  - Marcar como resolvido
-  - Dependência: Após #1
+  - Salvar relatórios de problema do tutorial
+  - Exibir lista de problemas no admin
+  - Permitir marcar como resolvido
+
+- [ ] **6. Persistir votos e salvamentos por usuário**
+  - Garantir que upvotes sejam únicos por usuário+tutorial
+  - Criar tabela `saved_tutorials`
+  - Sincronizar `user.savedTutorials`
+  - Evitar uso de estados locais como fonte de verdade
 
 ---
 
-## 🟠 ALTO — Completar Features Existentes
+## 🟠 ALTO — Admin e Fluxos Essenciais
 
-Features planejadas que estão incompletas.
+Após o core estar estável, essas features tornam o app gerenciável.
 
-- [ ] **6. Adicionar delete buttons no admin**
-  - Deletar tutorial (com confirmação)
-  - Deletar requisição
-  - Deletar usuário (soft delete)
-  - Adicionar logs de deleção
-  - Dependência: Após #1, #2
+- [ ] **7. CRUD completo no admin**
+  - Aprovar tutorial
+  - Excluir tutorial
+  - Excluir requisição
+  - Banir/desbanir usuário
+  - Promover/demover admin
+  - Registrar ações em logs de administrador
 
-- [ ] **7. Preencher páginas vazias**
-  - [ ] `/sobre` — Sobre a plataforma
-  - [ ] `/email-confirmado` — Sucesso após confirmação
-  - [ ] `/verifique-seu-email` — Instruções confirmação
-  - [ ] `/manutencao` — Página de manutenção
-  - [ ] `/offline` — Página offline
-  - [ ] `/acesso-negado` — Acesso restrito
+- [ ] **8. Melhorar criação de tutorial**
+  - Validar formulário com Zod e react-hook-form
+  - Garantir título, descrição e passos válidos
+  - Feedback de erro claro para o usuário
+  - Manter bom UX em mobile e dark mode
 
-- [ ] **8. Implementar perfil público de usuários**
-  - Criar rota `/usuario/[id]`
-  - Mostrar tutoriais criados
-  - Mostrar estatísticas (upvotes recebidos, contribuições)
-  - Link para seguir (opcional)
-  - Dependência: Após #1
+- [ ] **9. Ajustar perfil e sessão**
+  - Carregar `user.role` e `savedTutorials` direto do Supabase
+  - Remover dados de usuário mock em produção
+  - Garantir que o usuário veja seu conteúdo e permissões reais
 
----
-
-## 🟡 MÉDIO — Engagement & UX
-
-Features interessantes que melhoram experiência do usuário.
-
-- [ ] **9. Criar sistema de notificações**
-  - Novo comentário em tutorial que você criou
-  - Tutorial aprovado/rejeitado
-  - Resposta em requisição
-  - Toast notifications (Sonner) — já setup
-  - Opcional: email notifications (Supabase)
-
-- [ ] **10. Implementar tags para tutoriais**
-  - Criar tabela `tags`
-  - Relação many-to-many `tutorial_tags`
-  - UI para adicionar tags ao criar
-  - Filtro por tags
-  - Sugestões de tags populares
-
-- [ ] **11. Busca avançada com filtros múltiplos**
-  - Filtro por categoria (já existe)
-  - Filtro por tags (após #10)
-  - Filtro por data (recente/antigo)
-  - Filtro por autor
-  - Sort por relevância/upvotes/data
-  - Salvar buscas (opcional)
+- [ ] **10. Rota de perfil público**
+  - Criar `/usuario/[id]`
+  - Mostrar tutoriais do usuário
+  - Exibir estatísticas básicas
+  - Link para compartilhar perfil
 
 ---
 
-## 🟢 BAIXO — Extras & Polish
+## 🟡 MÉDIO — Engajamento e Busca
 
-Features nice-to-have, não blockers.
+Essas tarefas melhoram experiência e descoberta, mas não bloqueiam o core.
 
-- [ ] **12. Sistema de badges/achievements**
-  - Badge "Primeiro Tutorial"
-  - Badge "100 Upvotes"
-  - Badge "Power Contributor"
-  - Display no perfil público
-  - Gamification (opcional)
+- [ ] **11. Implementar tags para tutoriais**
+  - Criar tabelas `tags` e `tutorial_tags`
+  - UI para adicionar e filtrar tags
+  - Permitir filtro por tag na home
 
-- [ ] **13. Adicionar upload de imagens**
-  - Supabase Storage ou alternativa
-  - Upload ao criar tutorial
-  - Thumbnail no card
-  - Zoom ao clicar
-  - Validação de tamanho
+- [ ] **12. Busca avançada**
+  - Pesquisar por título, descrição e categoria
+  - Filtrar por tags, autor e data
+  - Ordenar por `upvotes`, recência e relevância
 
-- [ ] **14. Testes automatizados (Jest)**
-  - Setup Jest + React Testing Library
-  - Testes de componentes (card, navbar, form)
-  - Testes de lógica (filtros, search)
-  - Coverage mínimo: 60%
-  - GitHub Actions para CI
-
-- [ ] **15. SEO - meta tags dinâmicas**
-  - next/head com título + descrição por página
-  - og:image para compartilhamento
-  - Schema.org para tutoriais
-  - Robots.txt e sitemap.xml
-  - Analytics (já tem Vercel Analytics)
+- [ ] **13. Sistema de notificações**
+  - Toasts para ações de usuário importantes
+  - Notificação de novo comentário em tutorial criado
+  - Notificação de tutorial aprovado/rejeitado
+  - Possível integração com Supabase Realtime ou email
 
 ---
 
-## 📊 Dependências de Tarefas
+## 🟢 BAIXO — Extras e Polimento
 
-```
-#1 (Migrar tutoriais)
-  ├─> #3 (Comentários)
-  ├─> #4 (Upvotes)
-  ├─> #5 (Problemas)
-  ├─> #6 (Delete buttons)
-  ├─> #8 (Perfil público)
-  ├─> #10 (Tags)
-  └─> #11 (Busca avançada)
+Recursos úteis, mas não críticos para o MVP.
 
-#2 (Migrar requisições)
-  └─> #6 (Delete buttons)
-```
+- [ ] **14. Upload de imagens**
+  - Integrar Supabase Storage para thumbnails
+  - Validar tamanho e tipos de arquivo
+  - Exibir imagens nos cards e tutoriais
 
-**Recomendação:** Fazer na ordem 1→2→3→4→5→6→7→8→9...
+- [ ] **15. Testes automatizados**
+  - Configurar Jest + React Testing Library
+  - Cobrir componentes críticos como cards, forms e contexto
+  - Alcançar cobertura mínima de 60%
 
----
-
-## 🚀 Estimativas de Esforço
-
-| ID | Tarefa | Complexidade | Tempo Estimado | Prioridade |
-|---|---|---|---|---|
-| 1 | Migrar tutoriais | 🔴 Alta | 3-4h | 🔴 Crítica |
-| 2 | Migrar requisições | 🟡 Média | 2-3h | 🔴 Crítica |
-| 3 | CRUD comentários | 🔴 Alta | 3-4h | 🔴 Crítica |
-| 4 | Upvotes persistente | 🟡 Média | 1-2h | 🔴 Crítica |
-| 5 | Problemas Supabase | 🟡 Média | 2-3h | 🔴 Crítica |
-| 6 | Delete buttons | 🟢 Baixa | 1-2h | 🟠 Alto |
-| 7 | Páginas vazias | 🟢 Baixa | 2-3h | 🟠 Alto |
-| 8 | Perfil público | 🟡 Média | 2-3h | 🟠 Alto |
-| 9 | Notificações | 🟡 Média | 2-3h | 🟡 Médio |
-| 10 | Tags | 🔴 Alta | 3-4h | 🟡 Médio |
-| 11 | Busca avançada | 🔴 Alta | 3-4h | 🟡 Médio |
-| 12 | Badges | 🟢 Baixa | 1-2h | 🟢 Baixo |
-| 13 | Upload imagens | 🔴 Alta | 3-4h | 🟢 Baixo |
-| 14 | Testes | 🔴 Alta | 4-5h | 🟢 Baixo |
-| 15 | SEO | 🟢 Baixa | 2-3h | 🟢 Baixo |
-
-**Total estimado:** ~45-55 horas de desenvolvimento
+- [ ] **16. SEO e metatags dinâmicas**
+  - Definir título e descrição por página
+  - Suportar `og:image`, `og:title` e `og:description`
+  - Gerar `sitemap.xml` e `robots.txt`
 
 ---
 
-## ✅ Template de Checklist por Tarefa
+## 📌 Ordem Recomendada de Trabalho
 
-Quando começar uma tarefa, use este template:
-
-```markdown
-## Tarefa #X: [Nome da Tarefa]
-
-### Pré-requisitos
-- [ ] Dependência #Y completa?
-
-### Implementação
-- [ ] Tabela/schema criado no Supabase
-- [ ] Tipos TypeScript criados em lib/types.ts
-- [ ] Funções CRUD implementadas
-- [ ] Componentes UI criados
-- [ ] Integração com AuthContext
-- [ ] Tratamento de erros
-- [ ] Toast feedback ao usuário
-
-### Testes
-- [ ] Funciona em desenvolvimento
-- [ ] Funciona offline (se aplicável)
-- [ ] Dark mode testado
-- [ ] Responsividade testada
-
-### Deploy
-- [ ] Code review
-- [ ] Deploy em staging
-- [ ] Deploy em produção
-```
+1. Corrigir RLS de `profiles` e garantir acesso a `profiles(name)`
+2. Migrar `tutorials` para Supabase
+3. Migrar `tutorial_requests` para Supabase
+4. Implementar `comments` e `tutorial_problems`
+5. Persistir upvotes e salvamentos
+6. Completar CRUD admin e logs
+7. Melhorar criação de tutorial e validação
+8. Implementar perfil público
+9. Desenvolver tags e busca avançada
+10. Adicionar notificações, upload de imagens, testes e SEO
 
 ---
 
-## 📝 Notas Gerais
+## 🔧 Notas Técnicas
 
-- **Sempre usar TypeScript** — sem `any`
-- **Supabase queries** devem ter tipo explícito
-- **Validação Zod** para todos os inputs
-- **Dark mode** deve funcionar em tudo novo
-- **Admin logs** devem ser adicionados para ações críticas
-- **Git commits** descritivos: `feat: migrar tutoriais para Supabase`
+- Manter todos os arquivos em **TypeScript** sem `any`
+- Tipar consultas Supabase explicitamente
+- Usar `react-hook-form` + `zod` para validação de formulários
+- Evitar falhas silenciosas: mostrar toasts em erros de rede
+- Preferir dados server-driven sempre que possível
+
+---
+
+## 📄 Problemas Manuais
+
+- Se não for possível corrigir a política RLS de `profiles` localmente, documentar no `pendencias_manuais.txt`.
+- Se houver inconsistência no schema Supabase, guardar as queries SQL necessárias em `pendencias_manuais.txt`.
 
 ---
 
 **Última atualização:** 10/04/2026
-**Próxima revisão:** Após completar #5
+**Próxima revisão:** após completar a etapa 5
+
