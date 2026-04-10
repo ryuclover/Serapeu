@@ -47,7 +47,8 @@ export default function CreateTutorialPage() {
         steps: steps.filter((s) => s.trim()),
         author_id: user.id,
         category,
-        approved: user.role === "ADMIN"
+        approved: user.role === "ADMIN",
+        upvotes: 0,
       })
 
     if (error) {

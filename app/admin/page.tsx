@@ -37,7 +37,6 @@ export default function AdminPage() {
   const {
     user,
     tutorials,
-    setTutorials,
     problems,
     setProblems,
     requests,
@@ -50,6 +49,8 @@ export default function AdminPage() {
     unbanUser,
     promoteToAdmin,
     demoteFromAdmin,
+    approveTutorial,
+    deleteTutorial,
   } = useAuth()
 
   const [activeTab, setActiveTab] = useState<TabType>("dashboard")
@@ -97,33 +98,43 @@ export default function AdminPage() {
   }
 
   // Handlers
-  const handleApproveTutorial = (id: string) => {
+  const handleApproveTutorial = async (id: string) => {
     const tutorial = tutorials.find((t) => t.id === id)
-    setTutorials(tutorials.map((t) => (t.id === id ? { ...t, approved: true } : t)))
-    if (tutorial) {
-      addAdminLog({
-        adminId: user.id,
-        adminName: user.name,
-        action: "Aprovou tutorial",
-        targetType: "tutorial",
-        targetId: id,
-        targetName: tutorial.title,
-      })
+
+    try {
+      await approveTutorial(id)
+      if (tutorial) {
+        addAdminLog({
+          adminId: user.id,
+          adminName: user.name,
+          action: "Aprovou tutorial",
+          targetType: "tutorial",
+          targetId: id,
+          targetName: tutorial.title,
+        })
+      }
+    } catch (error) {
+      console.error('Erro ao aprovar tutorial:', error)
     }
   }
 
-  const handleDeleteTutorial = (id: string) => {
+  const handleDeleteTutorial = async (id: string) => {
     const tutorial = tutorials.find((t) => t.id === id)
-    setTutorials(tutorials.filter((t) => t.id !== id))
-    if (tutorial) {
-      addAdminLog({
-        adminId: user.id,
-        adminName: user.name,
-        action: "Excluiu tutorial",
-        targetType: "tutorial",
-        targetId: id,
-        targetName: tutorial.title,
-      })
+
+    try {
+      await deleteTutorial(id)
+      if (tutorial) {
+        addAdminLog({
+          adminId: user.id,
+          adminName: user.name,
+          action: "Excluiu tutorial",
+          targetType: "tutorial",
+          targetId: id,
+          targetName: tutorial.title,
+        })
+      }
+    } catch (error) {
+      console.error('Erro ao excluir tutorial:', error)
     }
   }
 
