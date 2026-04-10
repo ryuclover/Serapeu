@@ -91,6 +91,8 @@ interface AuthContextType {
   createComment: (tutorialId: string, content: string) => Promise<void>
   deleteComment: (tutorialId: string, commentId: string) => Promise<void>
   reportProblem: (problem: Omit<TutorialProblem, "id" | "createdAt" | "resolved">) => Promise<void>
+  resolveProblem: (problemId: string) => Promise<void>
+  deleteProblem: (problemId: string) => Promise<void>
   banUser: (userId: string) => void
   unbanUser: (userId: string) => void
   promoteToAdmin: (userId: string) => void
@@ -636,6 +638,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     ])
   }
 
+  const resolveProblem = async (problemId: string) => {
+    const { error } = await supabase
+      .from('tutorial_problems')
+      .update({ resolved: true })
+      .eq('id', problemId)
+
+    if (error) {
+      console.error('Erro ao marcar problema como resolvido:', error)
+      toast.error('Não foi possível resolver o problema.')
+      return
+    }
+
+    setProblems((prev) => prev.map((p) => (p.id === problemId ? { ...p, resolved: true } : p)))
+  }
+
+  const deleteProblem = async (problemId: string) => {
+    const { error } = await supabase
+      .from('tutorial_problems')
+      .delete()
+      .eq('id', problemId)
+
+    if (error) {
+      console.error('Erro ao deletar problema:', error)
+      toast.error('Não foi possível excluir o problema.')
+      return
+    }
+
+    setProblems((prev) => prev.filter((p) => p.id !== problemId))
+  }
+
   const banUser = async (userId: string) => {
     const { error } = await supabase
       .from('profiles')
@@ -727,6 +759,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         approveTutorial,
         deleteTutorial,
         incrementTutorialUpvotes,
+        resolveProblem,
+        deleteProblem,
         refreshData,
       }}
     >
