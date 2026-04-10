@@ -75,6 +75,8 @@ interface AuthContextType {
   demoteFromAdmin: (userId: string) => void
   approveTutorial: (tutorialId: string) => Promise<void>
   deleteTutorial: (tutorialId: string) => Promise<void>
+  createComment: (tutorialId: string, content: string) => Promise<void>
+  deleteComment: (tutorialId: string, commentId: string) => Promise<void>
   incrementTutorialUpvotes: (tutorialId: string) => Promise<void>
   toggleSaveTutorial: (tutorialId: string) => Promise<void>
   refreshData: () => Promise<void>
@@ -136,6 +138,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }))
       setTutorials(formattedTutorials)
     } else {
+      const { data: commentsData, error: commentsError } = await supabase
+        .from('comments')
+        .select('*')
+
+      const commentsByTutorial = (commentsData || []).reduce<Record<string, Comment[]>>((acc, comment) => {
+        if (!acc[comment.tutorialId]) {
+          acc[comment.tutorialId] = []
+        }
+        acc[comment.tutorialId].push(comment)
+        return acc
+      }, {})
+
+      if (commentsError) {
+        console.warn('Erro ao carregar comentários:', commentsError)
+      }
+
       const formattedTutorials: Tutorial[] = ((tutorialsData || []) as SupabaseTutorialRow[]).map((t) => {
         const profile = Array.isArray(t.profiles) ? t.profiles[0] : t.profiles
 
@@ -150,7 +168,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           createdAt: new Date(t.created_at).toLocaleDateString('pt-BR'),
           approved: t.approved,
           upvotes: t.upvotes ?? 0,
-          comments: [],
+          comments: commentsByTutorial[t.id] ?? [],
         }
       })
       setTutorials(formattedTutorials)
@@ -455,7 +473,68 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAdminLogs((prev) => [newLog, ...prev])
   }
 
-  const deleteComment = (tutorialId: string, commentId: string) => {
+  const addCommentToTutorial = (tutorialId: string, comment: Comment) => {
+    setTutorials((prev) =>
+      prev.map((t) => {
+        if (t.id === tutorialId) {
+          return {
+            ...t,
+            comments: [...(t.comments || []), comment],
+          }
+        }
+        return t
+      }),
+    )
+  }
+
+  const createComment = async (tutorialId: string, content: string) => {
+    if (!user) {
+      toast.error('Você precisa estar logado para comentar.')
+      return
+    }
+
+    const newComment: Comment = {
+      id: Date.now().toString(),
+      tutorialId,
+      userId: user.id,
+      userName: user.name,
+      content,
+      createdAt: new Date().toLocaleDateString('pt-BR'),
+    }
+
+    const { error } = await supabase
+      .from('comments')
+      .insert({
+        id: newComment.id,
+        tutorial_id: newComment.tutorialId,
+        user_id: newComment.userId,
+        user_name: newComment.userName,
+        content: newComment.content,
+        created_at: new Date().toISOString(),
+      })
+
+    if (error) {
+      console.error('Erro ao criar comentário:', error)
+      toast.error('Não foi possível postar o comentário.')
+      return
+    }
+
+    addCommentToTutorial(tutorialId, newComment)
+  }
+
+  const deleteComment = async (tutorialId: string, commentId: string) => {
+    const { error } = await supabase
+      .from('comments')
+      .delete()
+      .eq('id', commentId)
+      .eq('tutorial_id', tutorialId)
+
+    if (error) {
+      console.error('Erro ao deletar comentário:', error)
+      toast.error('Não foi possível deletar o comentário.')
+      return
+    }
+
     setTutorials((prev) =>
       prev.map((t) => {
         if (t.id === tutorialId && t.comments) {
@@ -506,6 +585,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUsers,
         adminLogs,
         addAdminLog,
+        createComment,
         deleteComment,
         banUser,
         unbanUser,

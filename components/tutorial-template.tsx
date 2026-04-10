@@ -18,7 +18,7 @@ import {
   Send,
   X,
 } from "lucide-react"
-import type { Tutorial, UserType, TutorialProblem } from "@/lib/types"
+import type { Comment, Tutorial, UserType, TutorialProblem } from "@/lib/types"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/lib/auth-context"
 
@@ -28,6 +28,7 @@ interface TutorialTemplateProps {
   onUpvote: () => void
   problems: TutorialProblem[]
   onReportProblem: (problem: Omit<TutorialProblem, "id" | "createdAt" | "resolved">) => void
+  onCreateComment: (content: string) => Promise<void>
 }
 
 function TutorialNotFound() {
@@ -303,7 +304,28 @@ function TutorialProblems({
   )
 }
 
-function TutorialComments({ user }: { user: UserType | null }) {
+function TutorialComments({
+  user,
+  comments,
+  onCreateComment,
+}: {
+  user: UserType | null
+  comments: Comment[]
+  onCreateComment: (content: string) => Promise<void>
+}) {
+  const [commentText, setCommentText] = useState("")
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const handleSubmit = async () => {
+    const trimmed = commentText.trim()
+    if (!trimmed || !user) return
+
+    setIsSubmitting(true)
+    await onCreateComment(trimmed)
+    setCommentText("")
+    setIsSubmitting(false)
+  }
+
   return (
     <div className="bg-card rounded-2xl p-6 shadow-sm border border-border animate-in fade-in slide-in-from-bottom-2 duration-300 delay-200">
       <h2 className="text-xl font-bold text-foreground mb-4 flex items-center gap-2">
@@ -318,11 +340,17 @@ function TutorialComments({ user }: { user: UserType | null }) {
           </div>
           <div className="flex-1">
             <textarea
+              value={commentText}
+              onChange={(e) => setCommentText(e.target.value)}
               placeholder="Escreva um comentário..."
               className="w-full px-4 py-3 bg-input border border-border rounded-xl text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"
               rows={3}
             />
-            <button className="mt-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors text-sm font-medium">
+            <button
+              onClick={handleSubmit}
+              disabled={!commentText.trim() || isSubmitting}
+              className="mt-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            >
               Comentar
             </button>
           </div>
@@ -340,7 +368,23 @@ function TutorialComments({ user }: { user: UserType | null }) {
         </div>
       )}
 
-      <p className="text-center text-muted-foreground py-4">Nenhum comentário ainda. Seja o primeiro!</p>
+      {comments.length > 0 ? (
+        <div className="space-y-4">
+          {comments.map((comment) => (
+            <div key={comment.id} className="p-4 bg-secondary/50 rounded-2xl border border-border">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <p className="font-medium text-foreground text-sm">{comment.userName}</p>
+                  <p className="text-muted-foreground text-xs">{comment.createdAt}</p>
+                </div>
+              </div>
+              <p className="text-muted-foreground text-sm">{comment.content}</p>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-center text-muted-foreground py-4">Nenhum comentário ainda. Seja o primeiro!</p>
+      )}
     </div>
   )
 }
@@ -424,6 +468,7 @@ export default function TutorialTemplate({
   onUpvote,
   problems,
   onReportProblem,
+  onCreateComment,
 }: TutorialTemplateProps) {
   const router = useRouter()
 
@@ -448,7 +493,7 @@ export default function TutorialTemplate({
           <TutorialHeader tutorial={tutorial} />
           <TutorialSteps steps={tutorial.steps} />
           <TutorialProblems tutorial={tutorial} user={user} problems={problems} onReportProblem={onReportProblem} />
-          <TutorialComments user={user} />
+          <TutorialComments user={user} comments={tutorial.comments || []} onCreateComment={onCreateComment} />
         </article>
 
         {/* Sidebar */}
