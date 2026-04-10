@@ -48,6 +48,7 @@ export default function AdminPage() {
     resolveProblem,
     deleteProblem,
     deleteRequest,
+    deleteUser,
     banUser,
     unbanUser,
     promoteToAdmin,
@@ -206,6 +207,21 @@ export default function AdminPage() {
         adminId: user.id,
         adminName: user.name,
         action: "Rebaixou de admin",
+        targetType: "user",
+        targetId: userId,
+        targetName: targetUser.name,
+      })
+    }
+  }
+
+  const handleDeleteUser = async (userId: string) => {
+    const targetUser = users.find((u) => u.id === userId)
+    await deleteUser(userId)
+    if (targetUser) {
+      addAdminLog({
+        adminId: user.id,
+        adminName: user.name,
+        action: "Excluiu usuário",
         targetType: "user",
         targetId: userId,
         targetName: targetUser.name,
@@ -729,6 +745,16 @@ export default function AdminPage() {
                                   <Crown className="w-4 h-4" />
                                 </Button>
                               )}
+                              <Button
+                                onClick={() => handleDeleteUser(u.id)}
+                                variant="destructive"
+                                size="sm"
+                                className="text-red-600"
+                                disabled={u.id === user.id}
+                                title={u.id === user.id ? "Não é possível excluir seu próprio usuário" : "Excluir usuário"}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
                             </div>
                           </td>
                         </tr>
