@@ -58,17 +58,35 @@ export default function PerguntasPage() {
     setIsCreating(false)
   }
 
-  const handleUpvote = (requestId: string) => {
+  const handleUpvote = async (requestId: string) => {
     if (!user) return
+
+    const request = requests.find((r) => r.id === requestId)
+    if (!request) return
+
+    const hasUpvoted = request.upvotedBy.includes(user.id)
+    const updatedUpvotedBy = hasUpvoted
+      ? request.upvotedBy.filter((id) => id !== user.id)
+      : [...request.upvotedBy, user.id]
+    const updatedUpvotes = hasUpvoted ? request.upvotes - 1 : request.upvotes + 1
+
+    const { error } = await supabase
+      .from('tutorial_requests')
+      .update({ upvotes: updatedUpvotes, upvoted_by: updatedUpvotedBy })
+      .eq('id', requestId)
+
+    if (error) {
+      console.error('Erro ao registrar upvote na requisição:', error)
+      return
+    }
 
     setRequests(
       requests.map((r) => {
         if (r.id === requestId) {
-          const hasUpvoted = r.upvotedBy.includes(user.id)
           return {
             ...r,
-            upvotes: hasUpvoted ? r.upvotes - 1 : r.upvotes + 1,
-            upvotedBy: hasUpvoted ? r.upvotedBy.filter((id) => id !== user.id) : [...r.upvotedBy, user.id],
+            upvotes: updatedUpvotes,
+            upvotedBy: updatedUpvotedBy,
           }
         }
         return r

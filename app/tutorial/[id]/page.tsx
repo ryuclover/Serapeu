@@ -8,24 +8,44 @@ import type { TutorialProblem } from "@/lib/types"
 export default function TutorialPage() {
   const params = useParams()
   const id = params.id as string
-  const { tutorials, setTutorials, user, problems, setProblems } = useAuth()
+  const { tutorials, user, problems, setProblems, incrementTutorialUpvotes, createComment, reportProblem } = useAuth()
 
   const tutorial = tutorials.find((t) => t.id === id) || null
 
-  const handleUpvote = () => {
-    if (tutorial) {
-      setTutorials(tutorials.map((t) => (t.id === id ? { ...t, upvotes: t.upvotes + 1 } : t)))
+  const handleUpvote = async () => {
+    if (!tutorial) {
+      return
+    }
+
+    try {
+      await incrementTutorialUpvotes(id)
+    } catch (error) {
+      console.error('Erro ao registrar upvote:', error)
     }
   }
 
-  const handleReportProblem = (problem: Omit<TutorialProblem, "id" | "createdAt" | "resolved">) => {
-    const newProblem: TutorialProblem = {
-      ...problem,
-      id: Date.now().toString(),
-      createdAt: new Date().toLocaleDateString("pt-BR"),
-      resolved: false,
+  const handleReportProblem = async (problem: Omit<TutorialProblem, "id" | "createdAt" | "resolved">) => {
+    if (!user) {
+      return
     }
-    setProblems([...problems, newProblem])
+
+    try {
+      await reportProblem(problem)
+    } catch (error) {
+      console.error('Erro ao relatar problema:', error)
+    }
+  }
+
+  const handleCreateComment = async (content: string) => {
+    if (!tutorial) {
+      return
+    }
+
+    try {
+      await createComment(tutorial.id, content)
+    } catch (error) {
+      console.error('Erro ao criar comentário:', error)
+    }
   }
 
   return (
@@ -35,6 +55,7 @@ export default function TutorialPage() {
       onUpvote={handleUpvote}
       problems={problems}
       onReportProblem={handleReportProblem}
+      onCreateComment={handleCreateComment}
     />
   )
 }

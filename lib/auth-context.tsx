@@ -3,10 +3,59 @@
 import type React from "react"
 
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
-import type { UserType, Tutorial, TutorialProblem, TutorialRequest, AdminLog } from "./types"
+import type { UserType, Tutorial, TutorialProblem, TutorialRequest, Comment, AdminLog } from "./types"
 import { initialTutorials, initialRequests } from "./types"
 import { createClient } from "@/lib/supabase/client"
 import { toast } from "sonner"
+
+type SupabaseTutorialRow = {
+  id: string
+  title: string
+  description: string
+  steps: string[]
+  author_id: string
+  category: string
+  created_at: string
+  approved: boolean
+  upvotes: number
+  profiles?: { name?: string } | { name?: string }[] | null
+}
+
+type SupabaseProfileRow = {
+  id: string
+  email: string
+  name: string
+  role: string
+  created_at: string
+  banned: boolean | null
+}
+
+type SupabaseCommentRow = {
+  id: string
+  tutorial_id: string
+  user_id: string
+  user_name: string
+  content: string
+  created_at: string
+}
+
+type SupabaseProblemRow = {
+  id: string
+  tutorial_id: string
+  user_id: string
+  user_name: string
+  step_number: number | null
+  description: string
+  created_at: string
+  resolved: boolean
+}
+
+type SupabaseError = {
+  code?: string
+  message?: string
+}
+
+const isProfilesPolicyRecursion = (error: SupabaseError | null | undefined) => error?.code === "42P17"
 
 const initialUsers: UserType[] = [
   { id: "1", email: "bob@expert.com", name: "Bob Expert", role: "USER", createdAt: "01/01/2023", banned: false },
@@ -39,11 +88,20 @@ interface AuthContextType {
   setUsers: React.Dispatch<React.SetStateAction<UserType[]>>
   adminLogs: AdminLog[]
   addAdminLog: (log: Omit<AdminLog, "id" | "createdAt">) => void
-  deleteComment: (tutorialId: string, commentId: string) => void
+  createComment: (tutorialId: string, content: string) => Promise<void>
+  deleteComment: (tutorialId: string, commentId: string) => Promise<void>
+  reportProblem: (problem: Omit<TutorialProblem, "id" | "createdAt" | "resolved">) => Promise<void>
+  resolveProblem: (problemId: string) => Promise<void>
+  deleteProblem: (problemId: string) => Promise<void>
+  deleteRequest: (requestId: string) => Promise<void>
   banUser: (userId: string) => void
   unbanUser: (userId: string) => void
   promoteToAdmin: (userId: string) => void
   demoteFromAdmin: (userId: string) => void
+  deleteUser: (userId: string) => Promise<void>
+  approveTutorial: (tutorialId: string) => Promise<void>
+  deleteTutorial: (tutorialId: string) => Promise<void>
+  incrementTutorialUpvotes: (tutorialId: string) => Promise<void>
   toggleSaveTutorial: (tutorialId: string) => Promise<void>
   refreshData: () => Promise<void>
 }
@@ -72,35 +130,129 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshData = async () => {
     // Fetch Tutorials
-    const { data: tutorialsData } = await supabase
+    let { data: tutorialsData, error: tutorialsError } = await supabase
       .from('tutorials')
       .select('*, profiles(name)')
       .order('created_at', { ascending: false })
 
-    if (tutorialsData) {
-      const formattedTutorials: Tutorial[] = tutorialsData.map((t: any) => ({
-        id: t.id,
-        title: t.title,
-        description: t.description,
-        steps: t.steps,
-        authorId: t.author_id,
-        authorName: t.profiles?.name || 'Usuário',
-        category: t.category,
-        createdAt: new Date(t.created_at).toLocaleDateString('pt-BR'),
-        approved: t.approved,
-        upvotes: t.upvotes,
-        comments: []
+    // Fallback: se houver recursao de policy em profiles, busca sem join.
+    if ((tutorialsError as SupabaseError | null)?.code === '42P17') {
+      const fallback = await supabase
+        .from('tutorials')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      tutorialsData = fallback.data
+      tutorialsError = fallback.error
+    }
+
+    if (tutorialsError) {
+      if (isProfilesPolicyRecursion(tutorialsError as SupabaseError)) {
+        setTutorials([])
+        setRequests([])
+        setUsers([])
+        return
+      }
+
+      console.warn('Erro ao carregar tutoriais:', tutorialsError)
+      toast.error('Não foi possível carregar os tutoriais.')
+      const formattedTutorials: Tutorial[] = initialTutorials.map((t) => ({
+        ...t,
+        createdAt: t.createdAt || new Date().toLocaleDateString('pt-BR'),
       }))
+      setTutorials(formattedTutorials)
+    } else {
+      const formattedTutorials: Tutorial[] = ((tutorialsData || []) as SupabaseTutorialRow[]).map((t) => {
+        const profile = Array.isArray(t.profiles) ? t.profiles[0] : t.profiles
+
+        return {
+          id: t.id,
+          title: t.title,
+          description: t.description,
+          steps: t.steps || [],
+          authorId: t.author_id,
+          authorName: profile?.name || 'Usuário',
+          category: t.category,
+          createdAt: new Date(t.created_at).toLocaleDateString('pt-BR'),
+          approved: t.approved,
+          upvotes: t.upvotes ?? 0,
+          comments: [],
+        }
+      })
       setTutorials(formattedTutorials)
     }
 
+    // Fetch Comments
+    const { data: commentsData, error: commentsError } = await supabase.from('comments').select('*')
+    const commentsByTutorial = (commentsData || []).reduce<Record<string, Comment[]>>((acc, comment: any) => {
+      if (!acc[comment.tutorial_id]) acc[comment.tutorial_id] = []
+      acc[comment.tutorial_id].push({
+        id: comment.id,
+        tutorialId: comment.tutorial_id,
+        userId: comment.user_id,
+        userName: comment.user_name,
+        content: comment.content,
+        createdAt: new Date(comment.created_at).toLocaleDateString('pt-BR'),
+      })
+      return acc
+    }, {})
+
+    if (commentsError) {
+      console.warn('Erro ao carregar comentários:', commentsError)
+    }
+
+    setTutorials((prev) =>
+      prev.map((tutorial) => ({
+        ...tutorial,
+        comments: commentsByTutorial[tutorial.id] || tutorial.comments || [],
+      })),
+    )
+
+    // Fetch Problems
+    const { data: problemsData, error: problemsError } = await supabase.from('tutorial_problems').select('*')
+    if (problemsError) {
+      console.warn('Erro ao carregar problemas:', problemsError)
+    } else {
+      const formattedProblems: TutorialProblem[] = (problemsData || []).map((problem: any) => ({
+        id: problem.id,
+        tutorialId: problem.tutorial_id,
+        userId: problem.user_id,
+        userName: problem.user_name,
+        stepNumber: problem.step_number,
+        description: problem.description,
+        createdAt: new Date(problem.created_at).toLocaleDateString('pt-BR'),
+        resolved: problem.resolved,
+      }))
+      setProblems(formattedProblems)
+    }
+
     // Fetch Requests
-    const { data: requestsData } = await supabase
+    let { data: requestsData, error: requestsError } = await supabase
       .from('tutorial_requests')
       .select('*, profiles(name)')
       .order('created_at', { ascending: false })
 
-    if (requestsData) {
+    // Fallback: se houver recursao de policy em profiles, busca sem join.
+    if ((requestsError as SupabaseError | null)?.code === '42P17') {
+      const fallback = await supabase
+        .from('tutorial_requests')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      requestsData = fallback.data
+      requestsError = fallback.error
+    }
+
+    if (requestsError) {
+      if (isProfilesPolicyRecursion(requestsError as SupabaseError)) {
+        setRequests([])
+        setUsers([])
+        return
+      }
+
+      console.warn('Erro ao carregar requisições:', requestsError)
+      setRequests(initialRequests)
+    } else if (requestsData) {
       const formattedRequests: TutorialRequest[] = requestsData.map((r: any) => ({
         id: r.id,
         userId: r.user_id,
@@ -112,25 +264,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         upvotes: r.upvotes,
         upvotedBy: r.upvoted_by || [],
         answered: r.answered,
-        answeredTutorialId: r.answered_tutorial_id
+        answeredTutorialId: r.answered_tutorial_id,
       }))
       setRequests(formattedRequests)
     }
 
     // Fetch Users
-    const { data: usersData } = await supabase
+    const { data: usersData, error: usersError } = await supabase
       .from('profiles')
       .select('*')
       .order('created_at', { ascending: false })
 
-    if (usersData) {
-      const formattedUsers: UserType[] = usersData.map((u: any) => ({
+    if (usersError) {
+      if (!isProfilesPolicyRecursion(usersError as SupabaseError)) {
+        console.warn('Erro ao carregar usuários:', usersError)
+      }
+      setUsers(initialUsers)
+    } else if (usersData) {
+      const formattedUsers: UserType[] = (usersData as SupabaseProfileRow[]).map((u) => ({
         id: u.id,
         email: u.email,
         name: u.name,
-        role: u.role,
+        role: u.role as "USER" | "ADMIN",
         createdAt: new Date(u.created_at).toLocaleDateString('pt-BR'),
-        banned: u.banned
+        banned: Boolean(u.banned),
       }))
       setUsers(formattedUsers)
     }
@@ -150,6 +307,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         
         const savedIds = savedData ? savedData.map((s: any) => s.tutorial_id) : []
 
+        // Fetch voted tutorials
+        const { data: votedData } = await supabase
+          .from('tutorial_votes')
+          .select('tutorial_id')
+          .eq('user_id', session.user.id)
+
+        const votedIds = votedData ? votedData.map((v: any) => v.tutorial_id) : []
+
         setUser({
           id: session.user.id,
           email: session.user.email!,
@@ -157,7 +322,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           role: session.user.user_metadata.role || "USER",
           createdAt: session.user.created_at,
           banned: false,
-          savedTutorials: savedIds
+          savedTutorials: savedIds,
+          votedTutorials: votedIds,
         })
       }
     })
@@ -173,6 +339,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         
         const savedIds = savedData ? savedData.map((s: any) => s.tutorial_id) : []
 
+        const { data: votedData } = await supabase
+          .from('tutorial_votes')
+          .select('tutorial_id')
+          .eq('user_id', session.user.id)
+
+        const votedIds = votedData ? votedData.map((v: any) => v.tutorial_id) : []
+
         setUser({
           id: session.user.id,
           email: session.user.email!,
@@ -180,7 +353,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           role: session.user.user_metadata.role || "USER",
           createdAt: session.user.created_at,
           banned: false,
-          savedTutorials: savedIds
+          savedTutorials: savedIds,
+          votedTutorials: votedIds,
         })
       } else {
         setUser(null)
@@ -246,6 +420,94 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     await supabase.auth.signOut()
     setUser(null)
+  }
+
+  const updateTutorialInState = (tutorialId: string, updater: (tutorial: Tutorial) => Tutorial) => {
+    setTutorials((prev) => prev.map((tutorial) => (tutorial.id === tutorialId ? updater(tutorial) : tutorial)))
+  }
+
+  const approveTutorial = async (tutorialId: string) => {
+    const { error } = await supabase
+      .from('tutorials')
+      .update({ approved: true })
+      .eq('id', tutorialId)
+
+    if (error) {
+      toast.error('Não foi possível aprovar o tutorial.')
+      throw error
+    }
+
+    updateTutorialInState(tutorialId, (tutorial) => ({ ...tutorial, approved: true }))
+  }
+
+  const deleteTutorial = async (tutorialId: string) => {
+    const { error } = await supabase
+      .from('tutorials')
+      .delete()
+      .eq('id', tutorialId)
+
+    if (error) {
+      toast.error('Não foi possível excluir o tutorial.')
+      throw error
+    }
+
+    setTutorials((prev) => prev.filter((tutorial) => tutorial.id !== tutorialId))
+  }
+
+  const incrementTutorialUpvotes = async (tutorialId: string) => {
+    if (!user) {
+      toast.error('Você precisa estar logado para votar.')
+      return
+    }
+
+    const currentTutorial = tutorials.find((tutorial) => tutorial.id === tutorialId)
+    if (!currentTutorial) {
+      return
+    }
+
+    const hasVoted = user.votedTutorials?.includes(tutorialId)
+    const nextUpvotes = hasVoted ? currentTutorial.upvotes - 1 : currentTutorial.upvotes + 1
+    const nextVotedTutorials = hasVoted
+      ? user.votedTutorials?.filter((id) => id !== tutorialId) ?? []
+      : [...(user.votedTutorials || []), tutorialId]
+
+    updateTutorialInState(tutorialId, (tutorial) => ({ ...tutorial, upvotes: nextUpvotes }))
+    setUser({ ...user, votedTutorials: nextVotedTutorials })
+
+    try {
+      if (hasVoted) {
+        const { error } = await supabase
+          .from('tutorial_votes')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('tutorial_id', tutorialId)
+
+        if (error) throw error
+        const { error: updateError } = await supabase
+          .from('tutorials')
+          .update({ upvotes: nextUpvotes })
+          .eq('id', tutorialId)
+
+        if (updateError) throw updateError
+      } else {
+        const { error } = await supabase
+          .from('tutorial_votes')
+          .insert({ user_id: user.id, tutorial_id: tutorialId })
+
+        if (error) throw error
+        const { error: updateError } = await supabase
+          .from('tutorials')
+          .update({ upvotes: nextUpvotes })
+          .eq('id', tutorialId)
+
+        if (updateError) throw updateError
+      }
+    } catch (error) {
+      updateTutorialInState(tutorialId, (tutorial) => ({ ...tutorial, upvotes: currentTutorial.upvotes }))
+      setUser({ ...user, votedTutorials: user.votedTutorials || [] })
+      toast.error('Não foi possível registrar o voto.')
+      throw error
+    }
   }
 
   const toggleSaveTutorial = async (tutorialId: string) => {
@@ -314,7 +576,68 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAdminLogs((prev) => [newLog, ...prev])
   }
 
-  const deleteComment = (tutorialId: string, commentId: string) => {
+  const addCommentToTutorial = (tutorialId: string, comment: Comment) => {
+    setTutorials((prev) =>
+      prev.map((t) => {
+        if (t.id === tutorialId) {
+          return {
+            ...t,
+            comments: [...(t.comments || []), comment],
+          }
+        }
+        return t
+      }),
+    )
+  }
+
+  const createComment = async (tutorialId: string, content: string) => {
+    if (!user) {
+      toast.error('Você precisa estar logado para comentar.')
+      return
+    }
+
+    const { data, error } = await supabase
+      .from('comments')
+      .insert({
+        tutorial_id: tutorialId,
+        user_id: user.id,
+        user_name: user.name,
+        content,
+      })
+      .select('*')
+      .single()
+
+    if (error || !data) {
+      console.error('Erro ao criar comentário:', error)
+      toast.error('Não foi possível postar o comentário.')
+      return
+    }
+
+    const newComment: Comment = {
+      id: data.id,
+      tutorialId: data.tutorial_id,
+      userId: data.user_id,
+      userName: data.user_name,
+      content: data.content,
+      createdAt: new Date(data.created_at).toLocaleDateString('pt-BR'),
+    }
+
+    addCommentToTutorial(tutorialId, newComment)
+  }
+
+  const deleteComment = async (tutorialId: string, commentId: string) => {
+    const { error } = await supabase
+      .from('comments')
+      .delete()
+      .eq('id', commentId)
+      .eq('tutorial_id', tutorialId)
+
+    if (error) {
+      console.error('Erro ao deletar comentário:', error)
+      toast.error('Não foi possível deletar o comentário.')
+      return
+    }
+
     setTutorials((prev) =>
       prev.map((t) => {
         if (t.id === tutorialId && t.comments) {
@@ -328,20 +651,170 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     )
   }
 
-  const banUser = (userId: string) => {
+  const reportProblem = async (problem: Omit<TutorialProblem, "id" | "createdAt" | "resolved">) => {
+    if (!user) {
+      toast.error('Você precisa estar logado para relatar um problema.')
+      return
+    }
+
+    const { data, error } = await supabase
+      .from('tutorial_problems')
+      .insert({
+        tutorial_id: problem.tutorialId,
+        user_id: problem.userId,
+        user_name: problem.userName,
+        step_number: problem.stepNumber,
+        description: problem.description,
+        resolved: false,
+      })
+      .select('*')
+      .single()
+
+    if (error || !data) {
+      console.error('Erro ao relatar problema:', error)
+      toast.error('Não foi possível relatar o problema.')
+      return
+    }
+
+    setProblems((prev) => [
+      ...prev,
+      {
+        id: data.id,
+        tutorialId: data.tutorial_id,
+        userId: data.user_id,
+        userName: data.user_name,
+        stepNumber: data.step_number,
+        description: data.description,
+        createdAt: new Date(data.created_at).toLocaleDateString('pt-BR'),
+        resolved: data.resolved,
+      },
+    ])
+  }
+
+  const resolveProblem = async (problemId: string) => {
+    const { error } = await supabase
+      .from('tutorial_problems')
+      .update({ resolved: true })
+      .eq('id', problemId)
+
+    if (error) {
+      console.error('Erro ao marcar problema como resolvido:', error)
+      toast.error('Não foi possível resolver o problema.')
+      return
+    }
+
+    setProblems((prev) => prev.map((p) => (p.id === problemId ? { ...p, resolved: true } : p)))
+  }
+
+  const deleteProblem = async (problemId: string) => {
+    const { error } = await supabase
+      .from('tutorial_problems')
+      .delete()
+      .eq('id', problemId)
+
+    if (error) {
+      console.error('Erro ao deletar problema:', error)
+      toast.error('Não foi possível excluir o problema.')
+      return
+    }
+
+    setProblems((prev) => prev.filter((p) => p.id !== problemId))
+  }
+
+  const deleteRequest = async (requestId: string) => {
+    const { error } = await supabase
+      .from('tutorial_requests')
+      .delete()
+      .eq('id', requestId)
+
+    if (error) {
+      console.error('Erro ao deletar requisição:', error)
+      toast.error('Não foi possível excluir a requisição.')
+      return
+    }
+
+    setRequests((prev) => prev.filter((request) => request.id !== requestId))
+  }
+
+  const banUser = async (userId: string) => {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ banned: true })
+      .eq('id', userId)
+
+    if (error) {
+      console.error('Erro ao banir usuário:', error)
+      toast.error('Não foi possível banir o usuário.')
+      return
+    }
+
     setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, banned: true } : u)))
   }
 
-  const unbanUser = (userId: string) => {
+  const unbanUser = async (userId: string) => {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ banned: false })
+      .eq('id', userId)
+
+    if (error) {
+      console.error('Erro ao desbanir usuário:', error)
+      toast.error('Não foi possível desbanir o usuário.')
+      return
+    }
+
     setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, banned: false } : u)))
   }
 
-  const promoteToAdmin = (userId: string) => {
-    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, role: "ADMIN" as const } : u)))
+  const promoteToAdmin = async (userId: string) => {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ role: 'ADMIN' })
+      .eq('id', userId)
+
+    if (error) {
+      console.error('Erro ao promover usuário a admin:', error)
+      toast.error('Não foi possível promover o usuário.')
+      return
+    }
+
+    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, role: 'ADMIN' as const } : u)))
   }
 
-  const demoteFromAdmin = (userId: string) => {
-    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, role: "USER" as const } : u)))
+  const demoteFromAdmin = async (userId: string) => {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ role: 'USER' })
+      .eq('id', userId)
+
+    if (error) {
+      console.error('Erro ao rebaixar usuário de admin:', error)
+      toast.error('Não foi possível rebaixar o usuário.')
+      return
+    }
+
+    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, role: 'USER' as const } : u)))
+  }
+
+  const deleteUser = async (userId: string) => {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ banned: true, name: 'Usuário excluído', role: 'USER' })
+      .eq('id', userId)
+
+    if (error) {
+      console.error('Erro ao excluir usuário:', error)
+      toast.error('Não foi possível excluir o usuário.')
+      return
+    }
+
+    setUsers((prev) =>
+      prev.map((u) =>
+        u.id === userId
+          ? { ...u, banned: true, name: 'Usuário excluído', role: 'USER' as const }
+          : u,
+      ),
+    )
   }
 
   return (
@@ -365,11 +838,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUsers,
         adminLogs,
         addAdminLog,
+        createComment,
         deleteComment,
+        reportProblem,
         banUser,
         unbanUser,
         promoteToAdmin,
         demoteFromAdmin,
+        deleteUser,
+        approveTutorial,
+        deleteTutorial,
+        incrementTutorialUpvotes,
+        resolveProblem,
+        deleteProblem,
+        deleteRequest,
         refreshData,
       }}
     >

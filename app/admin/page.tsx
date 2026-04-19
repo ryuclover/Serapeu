@@ -37,7 +37,6 @@ export default function AdminPage() {
   const {
     user,
     tutorials,
-    setTutorials,
     problems,
     setProblems,
     requests,
@@ -46,10 +45,16 @@ export default function AdminPage() {
     adminLogs,
     addAdminLog,
     deleteComment,
+    resolveProblem,
+    deleteProblem,
+    deleteRequest,
+    deleteUser,
     banUser,
     unbanUser,
     promoteToAdmin,
     demoteFromAdmin,
+    approveTutorial,
+    deleteTutorial,
   } = useAuth()
 
   const [activeTab, setActiveTab] = useState<TabType>("dashboard")
@@ -97,33 +102,43 @@ export default function AdminPage() {
   }
 
   // Handlers
-  const handleApproveTutorial = (id: string) => {
+  const handleApproveTutorial = async (id: string) => {
     const tutorial = tutorials.find((t) => t.id === id)
-    setTutorials(tutorials.map((t) => (t.id === id ? { ...t, approved: true } : t)))
-    if (tutorial) {
-      addAdminLog({
-        adminId: user.id,
-        adminName: user.name,
-        action: "Aprovou tutorial",
-        targetType: "tutorial",
-        targetId: id,
-        targetName: tutorial.title,
-      })
+
+    try {
+      await approveTutorial(id)
+      if (tutorial) {
+        addAdminLog({
+          adminId: user.id,
+          adminName: user.name,
+          action: "Aprovou tutorial",
+          targetType: "tutorial",
+          targetId: id,
+          targetName: tutorial.title,
+        })
+      }
+    } catch (error) {
+      console.error('Erro ao aprovar tutorial:', error)
     }
   }
 
-  const handleDeleteTutorial = (id: string) => {
+  const handleDeleteTutorial = async (id: string) => {
     const tutorial = tutorials.find((t) => t.id === id)
-    setTutorials(tutorials.filter((t) => t.id !== id))
-    if (tutorial) {
-      addAdminLog({
-        adminId: user.id,
-        adminName: user.name,
-        action: "Excluiu tutorial",
-        targetType: "tutorial",
-        targetId: id,
-        targetName: tutorial.title,
-      })
+
+    try {
+      await deleteTutorial(id)
+      if (tutorial) {
+        addAdminLog({
+          adminId: user.id,
+          adminName: user.name,
+          action: "Excluiu tutorial",
+          targetType: "tutorial",
+          targetId: id,
+          targetName: tutorial.title,
+        })
+      }
+    } catch (error) {
+      console.error('Erro ao excluir tutorial:', error)
     }
   }
 
@@ -199,9 +214,24 @@ export default function AdminPage() {
     }
   }
 
-  const handleResolveProblem = (problemId: string) => {
+  const handleDeleteUser = async (userId: string) => {
+    const targetUser = users.find((u) => u.id === userId)
+    await deleteUser(userId)
+    if (targetUser) {
+      addAdminLog({
+        adminId: user.id,
+        adminName: user.name,
+        action: "Excluiu usuário",
+        targetType: "user",
+        targetId: userId,
+        targetName: targetUser.name,
+      })
+    }
+  }
+
+  const handleResolveProblem = async (problemId: string) => {
     const problem = problems.find((p) => p.id === problemId)
-    setProblems(problems.map((p) => (p.id === problemId ? { ...p, resolved: true } : p)))
+    await resolveProblem(problemId)
     if (problem) {
       addAdminLog({
         adminId: user.id,
@@ -214,9 +244,9 @@ export default function AdminPage() {
     }
   }
 
-  const handleDeleteProblem = (problemId: string) => {
+  const handleDeleteProblem = async (problemId: string) => {
     const problem = problems.find((p) => p.id === problemId)
-    setProblems(problems.filter((p) => p.id !== problemId))
+    await deleteProblem(problemId)
     if (problem) {
       addAdminLog({
         adminId: user.id,
@@ -229,9 +259,9 @@ export default function AdminPage() {
     }
   }
 
-  const handleDeleteRequest = (requestId: string) => {
+  const handleDeleteRequest = async (requestId: string) => {
     const request = requests.find((r) => r.id === requestId)
-    setRequests(requests.filter((r) => r.id !== requestId))
+    await deleteRequest(requestId)
     if (request) {
       addAdminLog({
         adminId: user.id,
@@ -715,6 +745,16 @@ export default function AdminPage() {
                                   <Crown className="w-4 h-4" />
                                 </Button>
                               )}
+                              <Button
+                                onClick={() => handleDeleteUser(u.id)}
+                                variant="destructive"
+                                size="sm"
+                                className="text-red-600"
+                                disabled={u.id === user.id}
+                                title={u.id === user.id ? "Não é possível excluir seu próprio usuário" : "Excluir usuário"}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
                             </div>
                           </td>
                         </tr>
