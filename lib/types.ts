@@ -8,6 +8,7 @@ export interface UserType {
   createdAt?: string
   banned?: boolean
   savedTutorials?: string[] // IDs dos tutoriais salvos
+  votedTutorials?: string[] // IDs dos tutoriais votados
 }
 
 export interface Tutorial {
