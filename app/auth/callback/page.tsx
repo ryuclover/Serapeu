@@ -21,24 +21,14 @@ export default function AuthCallbackPage() {
         return
       }
 
-      const auth: any = supabase.auth
-      let result: { data?: any; error?: any } = {}
+      const { data, error } = await supabase.auth.exchangeCodeForSession(code)
 
-      if (typeof auth.getSessionFromUrl === "function") {
-        result = await auth.getSessionFromUrl()
-      } else if (typeof auth.exchangeCodeForSession === "function") {
-        result = await auth.exchangeCodeForSession(code)
-      } else {
-        setError("Método de login não suportado pelo client Supabase")
+      if (error) {
+        setError(error.message)
         return
       }
 
-      if (result.error) {
-        setError(result.error.message || "Erro ao finalizar login")
-        return
-      }
-
-      const session = result.data?.session
+      const session = data?.session
       if (!session) {
         setError("Falha ao obter sessão de login")
         return
