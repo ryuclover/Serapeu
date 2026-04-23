@@ -21,20 +21,25 @@ export default function AuthCallbackPage() {
         return
       }
 
-      const { data, error } = await supabase.auth.exchangeCodeForSession(code)
+      try {
+        const { data, error } = await supabase.auth.exchangeCodeForSession(code)
 
-      if (error) {
-        setError(error.message)
-        return
+        if (error) {
+          setError(error.message)
+          return
+        }
+
+        const session = data?.session
+        if (!session) {
+          setError("Falha ao obter sessão de login")
+          return
+        }
+
+        window.location.replace(next)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        setError(message || "Erro desconhecido ao finalizar login")
       }
-
-      const session = data?.session
-      if (!session) {
-        setError("Falha ao obter sessão de login")
-        return
-      }
-
-      window.location.replace(next)
     }
 
     handleCallback()
