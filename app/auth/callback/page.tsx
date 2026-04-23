@@ -14,19 +14,21 @@ export default function AuthCallbackPage() {
       const supabase = createClient()
       const params = new URLSearchParams(window.location.search)
       const next = params.get("next") ?? "/"
+      const code = params.get("code")
 
-      if (!params.get("code") && !params.get("access_token")) {
+      if (!code) {
         router.replace(next)
         return
       }
 
-      const { error } = await supabase.auth.getSessionFromUrl()
+      const { error } = await supabase.auth.exchangeCodeForSession(code)
 
       if (error) {
         setError(error.message)
         return
       }
 
+      window.history.replaceState(null, "", next)
       router.replace(next)
     }
 
