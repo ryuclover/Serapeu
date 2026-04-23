@@ -389,7 +389,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           name,
           role: "USER",
         },
-        emailRedirectTo: `${window.location.origin}/auth/callback?next=/email-confirmado`,
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
       },
     })
     return { data, error }
