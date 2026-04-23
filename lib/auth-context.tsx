@@ -123,7 +123,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Check for auth code in URL (handling redirect from Supabase)
     const params = new URLSearchParams(window.location.search)
     const code = params.get('code')
-    if (code) {
+    const currentPath = window.location.pathname
+    if (code && currentPath !== "/auth/callback") {
       window.location.href = `/auth/callback${window.location.search}`
     }
   }, [])
