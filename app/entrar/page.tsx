@@ -17,7 +17,6 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState("")
   const [isLoading, setIsLoading] = useState(false)
-  const callbackUrl = `${window.location.origin}/auth/callback?next=/`
 
   const supabase = createClient()
 
@@ -151,7 +150,7 @@ export default function LoginPage() {
                 const { error } = await supabase.auth.signInWithOAuth({
                   provider: "google",
                   options: {
-                    redirectTo: callbackUrl,
+                    redirectTo: `${window.location.origin}/auth/callback`,
                   },
                 })
                 if (error) setError("Não foi possível entrar com o Google.")
@@ -185,7 +184,7 @@ export default function LoginPage() {
                 const { error } = await supabase.auth.signInWithOAuth({
                   provider: "github",
                   options: {
-                    redirectTo: callbackUrl,
+                    redirectTo: `${window.location.origin}/auth/callback`,
                   },
                 })
                 if (error) setError("Não foi possível entrar com o GitHub.")
