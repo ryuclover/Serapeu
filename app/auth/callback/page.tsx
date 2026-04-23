@@ -21,15 +21,20 @@ export default function AuthCallbackPage() {
         return
       }
 
-      const { error } = await supabase.auth.exchangeCodeForSession(code)
+      const { data, error } = await supabase.auth.exchangeCodeForSession(code)
 
       if (error) {
         setError(error.message)
         return
       }
 
-      window.history.replaceState(null, "", next)
-      router.replace(next)
+      const session = data?.session
+      if (!session) {
+        setError("Falha ao obter sessão de login")
+        return
+      }
+
+      window.location.replace(next)
     }
 
     handleCallback()
