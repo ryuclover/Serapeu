@@ -20,6 +20,7 @@ export default function RegisterPage() {
   const [error, setError] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [acceptTerms, setAcceptTerms] = useState(false)
+  const callbackUrl = `${window.location.origin}/auth/callback?next=/`
   const supabase = createClient()
 
   // Password strength
@@ -268,7 +269,7 @@ export default function RegisterPage() {
                 const { error } = await supabase.auth.signInWithOAuth({
                   provider: "google",
                   options: {
-                    redirectTo: `${window.location.origin}/auth/callback`,
+                    redirectTo: callbackUrl,
                   },
                 })
                 if (error) setError("Não foi possível continuar com o Google.")
@@ -302,7 +303,7 @@ export default function RegisterPage() {
                 const { error } = await supabase.auth.signInWithOAuth({
                   provider: "github",
                   options: {
-                    redirectTo: `${window.location.origin}/auth/callback`,
+                    redirectTo: callbackUrl,
                   },
                 })
                 if (error) setError("Não foi possível continuar com o GitHub.")
