@@ -99,7 +99,7 @@ begin
   on conflict (id) do update
   set email = excluded.email,
       name = excluded.name,
-      role = public.profiles.role;
+      role = profiles.role;
 
   return new;
 end;
