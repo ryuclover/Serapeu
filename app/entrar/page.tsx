@@ -5,7 +5,7 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Logo } from "@/components/logo"
-import { useAuth, ADMIN_CREDENTIALS } from "@/lib/auth-context"
+import { useAuth } from "@/lib/auth-context"
 import { Mail, Lock, Eye, EyeOff } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 
