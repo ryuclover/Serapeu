@@ -65,11 +65,6 @@ const initialUsers: UserType[] = [
   { id: "5", email: "pedro@email.com", name: "Pedro Santos", role: "USER", createdAt: "05/08/2023", banned: false },
 ]
 
-export const ADMIN_CREDENTIALS = {
-  email: "admin@serapeu.com",
-  password: "admin123",
-}
-
 interface AuthContextType {
   user: UserType | null
   signIn: (email: string, password: string) => Promise<{ error: any }>
@@ -297,6 +292,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     refreshData()
 
+    const buildUserFromSession = async (sessionUser: any, savedIds: string[], votedIds: string[]): Promise<UserType> => {
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('email, name, role, banned, created_at')
+        .eq('id', sessionUser.id)
+        .maybeSingle()
+
+      const email = profileData?.email || sessionUser.email || ''
+
+      return {
+        id: sessionUser.id,
+        email,
+        name: profileData?.name || sessionUser.user_metadata.name || email.split('@')[0],
+        role: profileData?.role === 'ADMIN' ? 'ADMIN' : 'USER',
+        createdAt: profileData?.created_at || sessionUser.created_at,
+        banned: Boolean(profileData?.banned),
+        savedTutorials: savedIds,
+        votedTutorials: votedIds,
+      }
+    }
+
     // Check active session
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session?.user) {
@@ -315,17 +331,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .eq('user_id', session.user.id)
 
         const votedIds = votedData ? votedData.map((v: any) => v.tutorial_id) : []
-
-        setUser({
-          id: session.user.id,
-          email: session.user.email!,
-          name: session.user.user_metadata.name || session.user.email!.split('@')[0],
-          role: session.user.user_metadata.role || "USER",
-          createdAt: session.user.created_at,
-          banned: false,
-          savedTutorials: savedIds,
-          votedTutorials: votedIds,
-        })
+        setUser(await buildUserFromSession(session.user, savedIds, votedIds))
       }
     })
 
@@ -346,17 +352,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .eq('user_id', session.user.id)
 
         const votedIds = votedData ? votedData.map((v: any) => v.tutorial_id) : []
-
-        setUser({
-          id: session.user.id,
-          email: session.user.email!,
-          name: session.user.user_metadata.name || session.user.email!.split('@')[0],
-          role: session.user.user_metadata.role || "USER",
-          createdAt: session.user.created_at,
-          banned: false,
-          savedTutorials: savedIds,
-          votedTutorials: votedIds,
-        })
+        setUser(await buildUserFromSession(session.user, savedIds, votedIds))
       } else {
         setUser(null)
       }
@@ -388,7 +384,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       options: {
         data: {
           name,
-          role: "USER",
         },
         emailRedirectTo: `${window.location.origin}/auth/callback`,
       },
