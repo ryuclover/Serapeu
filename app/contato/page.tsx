@@ -22,7 +22,7 @@ export default function ContatoPage() {
         </div>
       </div>
 
-      <div className="container max-w-4xl py-12 px-4 -mt-8 relative z-10">
+      <div className="container max-w-4xl mx-auto py-12 px-4 -mt-8 relative z-10">
         <div className="grid gap-8 md:grid-cols-5 animate-in fade-in duration-700">
           
           {/* Informações de contato */}

@@ -40,12 +40,11 @@ export default function PrivacidadePage() {
           </div>
           <div>
             <h1 className="text-3xl font-bold tracking-tight md:text-5xl">Política de Privacidade</h1>
-            <p className="text-amber-100 mt-2 text-lg">Última atualização: {new Date().toLocaleDateString('pt-BR')}</p>
           </div>
         </div>
       </div>
 
-      <div className="container max-w-4xl py-12 px-4 -mt-8 relative z-10">
+      <div className="container max-w-4xl mx-auto py-12 px-4 -mt-8 relative z-10">
         <div className="bg-card rounded-2xl shadow-xl border border-border p-6 md:p-10 animate-in fade-in duration-700">
           <div className="space-y-8 text-muted-foreground leading-relaxed">
             {sections.map((section, index) => (
