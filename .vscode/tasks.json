@@ -1,0 +1,30 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "vercel-prod-deploy",
+			"type": "shell",
+			"command": "npx",
+			"args": [
+				"vercel",
+				"--prod",
+				"--confirm"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "vercel-prod-deploy-cmd",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"npx vercel --prod --confirm"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		}
+	]
+}
