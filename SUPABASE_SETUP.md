@@ -276,3 +276,33 @@ git push  # ou manual deploy no Vercel
 ---
 
 **Status**: 🔴 Aguardando configuração do Supabase para testes completos
+- -   C r e a t e   s a v e d _ t u t o r i a l s   t a b l e   i f   i t   d o e s n ' t   e x i s t  
+ c r e a t e   t a b l e   i f   n o t   e x i s t s   s a v e d _ t u t o r i a l s   (  
+     i d   u u i d   d e f a u l t   g e n _ r a n d o m _ u u i d ( )   p r i m a r y   k e y ,  
+     u s e r _ i d   u u i d   r e f e r e n c e s   a u t h . u s e r s ( i d )   o n   d e l e t e   c a s c a d e   n o t   n u l l ,  
+     t u t o r i a l _ i d   u u i d   r e f e r e n c e s   t u t o r i a l s ( i d )   o n   d e l e t e   c a s c a d e   n o t   n u l l ,  
+     c r e a t e d _ a t   t i m e s t a m p   w i t h   t i m e   z o n e   d e f a u l t   t i m e z o n e ( ' u t c ' : : t e x t ,   n o w ( ) )   n o t   n u l l ,  
+     u n i q u e ( u s e r _ i d ,   t u t o r i a l _ i d )  
+ ) ;  
+  
+ - -   E n a b l e   R L S  
+ a l t e r   t a b l e   s a v e d _ t u t o r i a l s   e n a b l e   r o w   l e v e l   s e c u r i t y ;  
+  
+ - -   D r o p   e x i s t i n g   p o l i c i e s   t o   a v o i d   c o n f l i c t s  
+ d r o p   p o l i c y   i f   e x i s t s   " U s e r s   c a n   v i e w   t h e i r   o w n   s a v e d   t u t o r i a l s "   o n   s a v e d _ t u t o r i a l s ;  
+ d r o p   p o l i c y   i f   e x i s t s   " U s e r s   c a n   s a v e   t u t o r i a l s "   o n   s a v e d _ t u t o r i a l s ;  
+ d r o p   p o l i c y   i f   e x i s t s   " U s e r s   c a n   u n s a v e   t u t o r i a l s "   o n   s a v e d _ t u t o r i a l s ;  
+  
+ - -   C r e a t e   p o l i c i e s  
+ c r e a t e   p o l i c y   " U s e r s   c a n   v i e w   t h e i r   o w n   s a v e d   t u t o r i a l s "  
+     o n   s a v e d _ t u t o r i a l s   f o r   s e l e c t  
+     u s i n g   ( a u t h . u i d ( )   =   u s e r _ i d ) ;  
+  
+ c r e a t e   p o l i c y   " U s e r s   c a n   s a v e   t u t o r i a l s "  
+     o n   s a v e d _ t u t o r i a l s   f o r   i n s e r t  
+     w i t h   c h e c k   ( a u t h . u i d ( )   =   u s e r _ i d ) ;  
+  
+ c r e a t e   p o l i c y   " U s e r s   c a n   u n s a v e   t u t o r i a l s "  
+     o n   s a v e d _ t u t o r i a l s   f o r   d e l e t e  
+     u s i n g   ( a u t h . u i d ( )   =   u s e r _ i d ) ;  
+ 
