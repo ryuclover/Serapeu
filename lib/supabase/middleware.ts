@@ -35,11 +35,21 @@ export async function updateSession(request: NextRequest) {
   // Proteções específicas por rota
   const pathname = request.nextUrl.pathname
 
-  // Admin: exige apenas sessão autenticada aqui.
-  // A checagem de role acontece na própria página /admin.
+  // Admin: block non-admins
   if (pathname.startsWith('/admin')) {
     if (!user) {
       return NextResponse.redirect(new URL('/entrar', request.url))
+    }
+    
+    // Check role from profiles table directly in middleware
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+      
+    if (profile?.role !== 'ADMIN') {
+      return NextResponse.redirect(new URL('/', request.url)) // Redirect to home if not admin
     }
   }
 

@@ -274,7 +274,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         ...t,
         createdAt: t.createdAt || new Date().toLocaleDateString('pt-BR'),
       }))
-      setTutorials(formattedTutorials)
+      setTutorials([])
     } else {
       console.log('[refreshData] Processing tutorials:', tutorialsData?.length || 0)
       const formattedTutorials: Tutorial[] = ((tutorialsData || []) as SupabaseTutorialRow[]).map((t) => {
@@ -298,10 +298,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // If we got 0 tutorials from DB, fallback to initialTutorials for demo/dev
       if (formattedTutorials.length === 0) {
         console.log('[refreshData] No tutorials in DB, using initialTutorials')
-        setTutorials(initialTutorials)
+        setTutorials([])
       } else {
         console.log('[refreshData] Setting tutorials from DB:', formattedTutorials.length)
-        setTutorials(formattedTutorials)
+        setTutorials([])
       }
     }
 
@@ -374,7 +374,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       console.warn('Erro ao carregar requisições:', requestsError)
-      setRequests(initialRequests)
+      setRequests([])
     } else if (requestsData) {
       const formattedRequests: TutorialRequest[] = requestsData.map((r: any) => ({
         id: r.id,
@@ -405,7 +405,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!isProfilesPolicyRecursion(usersError as SupabaseError)) {
         console.warn('[refreshData] User error:', usersError)
       }
-      setUsers(initialUsers)
+      setUsers([])
     } else if (usersData) {
       console.log('[refreshData] Processing users:', usersData.length)
       const formattedUsers: UserType[] = (usersData as SupabaseProfileRow[]).map((u) => ({

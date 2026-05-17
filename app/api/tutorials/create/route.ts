@@ -9,6 +9,15 @@ type CreateTutorialBody = {
   steps?: string[]
 }
 
+import { z } from 'zod'
+
+const tutorialSchema = z.object({
+  title: z.string().min(1, 'O título é obrigatório.').max(100, 'Título muito longo.'),
+  description: z.string().min(1, 'A descrição é obrigatória.'),
+  category: z.string().min(1, 'A categoria é obrigatória.'),
+  steps: z.array(z.string().trim().min(1)).min(1, 'Adicione pelo menos um passo.'),
+})
+
 export async function POST(request: NextRequest) {
   try {
     const supabase = createServerClient(
@@ -35,15 +44,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
     }
 
-    const body = (await request.json()) as CreateTutorialBody
-    const title = body?.title?.trim() ?? ''
-    const description = body?.description?.trim() ?? ''
-    const category = body?.category?.trim() ?? ''
-    const steps = (body?.steps ?? []).map((step) => step.trim()).filter(Boolean)
+    const json = await request.json()
+    const parseResult = tutorialSchema.safeParse(json)
 
-    if (!title || !description || !category || steps.length === 0) {
-      return NextResponse.json({ error: 'Dados inválidos para criação do tutorial.' }, { status: 400 })
+    if (!parseResult.success) {
+      const firstError = parseResult.error.errors[0]?.message || 'Dados inválidos'
+      return NextResponse.json({ error: firstError }, { status: 400 })
     }
+
+    const { title, description, category, steps } = parseResult.data
 
     const { data: profile } = await supabase
       .from('profiles')
