@@ -8,12 +8,11 @@ import { PlusCircle, Trash2, ChevronLeft } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
 // import { Navbar } from "@/components/navbar"
 import { categories } from "@/lib/types"
-import { createClient } from "@/lib/supabase/client"
+import { toast } from "sonner"
 
 export default function CreateTutorialPage() {
   const router = useRouter()
   const { user, refreshData } = useAuth()
-  const supabase = createClient()
 
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
@@ -35,30 +34,39 @@ export default function CreateTutorialPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!user || !title || !description || steps.filter((s) => s.trim()).length === 0) return
-
-    setIsSubmitting(true)
-
-    const { error } = await supabase
-      .from('tutorials')
-      .insert({
-        title,
-        description,
-        steps: steps.filter((s) => s.trim()),
-        author_id: user.id,
-        category,
-        approved: user.role === "ADMIN",
-        upvotes: 0,
-      })
-
-    if (error) {
-      console.error('Error creating tutorial:', error)
-      setIsSubmitting(false)
+    if (!user || !title || !description || steps.filter((s) => s.trim()).length === 0) {
+      toast.error("Preencha todos os campos obrigatórios.")
       return
     }
 
-    await refreshData()
-    router.push("/")
+    setIsSubmitting(true)
+
+    try {
+      const response = await fetch('/api/tutorials/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title,
+          description,
+          category,
+          steps,
+        }),
+      })
+
+      const json = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        throw new Error(json?.error || 'Não foi possível criar o tutorial.')
+      }
+
+      toast.success(json?.approved ? 'Tutorial publicado com sucesso!' : 'Tutorial enviado para aprovação!')
+      await refreshData()
+      router.push('/')
+    } catch (error: any) {
+      console.error('Error creating tutorial:', error)
+      toast.error(error?.message || 'Erro ao publicar tutorial.')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   if (!user) {

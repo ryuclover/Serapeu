@@ -162,3 +162,16 @@ export const initialRequests: TutorialRequest[] = [
     answered: false,
   },
 ]
+
+// Schemas Zod para validações
+import { z } from 'zod'
+
+export const profileUpdateSchema = z.object({
+  name: z
+    .string()
+    .min(2, 'Nome deve ter pelo menos 2 caracteres')
+    .max(100, 'Nome não pode exceder 100 caracteres')
+    .regex(/^[a-zA-Z\s]+$/, 'Nome deve conter apenas letras e espaços'),
+})
+
+export type ProfileUpdateInput = z.infer<typeof profileUpdateSchema>

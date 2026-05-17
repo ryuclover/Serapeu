@@ -27,15 +27,14 @@ import { Logo } from "./logo"
 
 export function Navbar() {
   const router = useRouter()
-  const { user, logout, darkMode, setDarkMode, tutorials } = useAuth()
+  const { user, darkMode, setDarkMode, tutorials } = useAuth()
   const [searchQuery, setSearchQuery] = useState("")
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const pendingCount = tutorials.filter((t) => !t.approved).length
 
   const handleLogout = () => {
-    logout()
     setMobileMenuOpen(false)
-    router.push("/")
+    window.location.href = "/auth/signout?next=/"
   }
 
   const handleSearch = (e: React.FormEvent) => {
@@ -107,7 +106,16 @@ export function Navbar() {
                   Perfil
                 </Link>
 
-                {/* Admin button removed */}
+                {user.role === "ADMIN" && (
+                  <Link
+                    href="/admin"
+                    className="flex items-center gap-2 px-4 py-2 bg-white/15 text-white rounded-full font-medium hover:bg-white/25 transition-colors"
+                  >
+                    <Shield className="w-4 h-4" />
+                    Admin
+                  </Link>
+                )}
+
                 <button
                   onClick={handleLogout}
                   className="p-2 rounded-full bg-amber-700/50 text-white hover:bg-amber-700/70 transition-colors"
@@ -219,7 +227,16 @@ export function Navbar() {
                     <PlusCircle className="w-5 h-5 text-green-500" />
                     <span>Criar Tutorial</span>
                   </Link>
-                  {/* Admin mobile button removed */}
+                  {user.role === "ADMIN" && (
+                    <Link
+                      href="/admin"
+                      onClick={handleNavigation}
+                      className="flex items-center gap-3 px-4 py-3 text-foreground hover:bg-muted rounded-lg transition-colors"
+                    >
+                      <Shield className="w-5 h-5 text-amber-600" />
+                      <span>Painel Admin</span>
+                    </Link>
+                  )}
                   <button
                     onClick={handleLogout}
                     className="flex items-center gap-3 px-4 py-3 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors w-full"

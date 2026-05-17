@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import {
@@ -28,6 +28,9 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Pagination } from "@/components/pagination"
+import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog"
+import { Spinner } from "@/components/ui/spinner"
 import { useAuth } from "@/lib/auth-context"
 
 type TabType = "dashboard" | "tutorials" | "comments" | "users" | "problems" | "requests" | "logs" | "settings"
@@ -36,6 +39,7 @@ export default function AdminPage() {
   const router = useRouter()
   const {
     user,
+    authReady,
     tutorials,
     problems,
     setProblems,
@@ -55,11 +59,53 @@ export default function AdminPage() {
     demoteFromAdmin,
     approveTutorial,
     deleteTutorial,
+    refreshDataFromServer,
   } = useAuth()
 
-  const [activeTab, setActiveTab] = useState<TabType>("dashboard")
+  const [activeTab, setActiveTab] = useState<TabType>("tutorials")
   const [searchTerm, setSearchTerm] = useState("")
-  const [filterStatus, setFilterStatus] = useState<"all" | "pending" | "approved">("all")
+  const [filterStatus, setFilterStatus] = useState<"all" | "pending" | "approved">("pending")
+
+  // Estados para confirmação de delete
+  const didLoadAdminData = useRef(false)
+
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    isOpen: boolean
+    type: "tutorial" | "comment" | "user" | "problem" | "request" | null
+    id: string | null
+    name: string | null
+    tutorialId?: string // Para comentários
+  }>({
+    isOpen: false,
+    type: null,
+    id: null,
+    name: null,
+  })
+  const [isDeleting, setIsDeleting] = useState(false)
+
+  // Estados de paginação
+  const [currentPage, setCurrentPage] = useState({
+    tutorials: 1,
+    comments: 1,
+    users: 1,
+    problems: 1,
+    requests: 1,
+  })
+  const ITEMS_PER_PAGE = 10
+  const usersTableRef = useRef<HTMLDivElement | null>(null)
+  const usersTabulatorRef = useRef<any>(null)
+
+  if (!authReady) {
+    return (
+      <div className="min-h-[80vh] flex items-center justify-center">
+        <div className="text-center max-w-md mx-auto px-4">
+          <Spinner className="w-8 h-8 mx-auto mb-4 text-amber-600" />
+          <h1 className="text-2xl font-bold text-foreground mb-2">Carregando painel</h1>
+          <p className="text-muted-foreground">Verificando sua sessão de administrador...</p>
+        </div>
+      </div>
+    )
+  }
 
   // Redirecionar para login se não for admin
   if (!user || user.role !== "ADMIN") {
@@ -106,7 +152,16 @@ export default function AdminPage() {
     const tutorial = tutorials.find((t) => t.id === id)
 
     try {
-      await approveTutorial(id)
+      const res = await fetch('/api/admin/tutorials/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      })
+
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}))
+        throw new Error(json?.error || 'Erro ao aprovar tutorial')
+      }
       if (tutorial) {
         addAdminLog({
           adminId: user.id,
@@ -124,34 +179,76 @@ export default function AdminPage() {
 
   const handleDeleteTutorial = async (id: string) => {
     const tutorial = tutorials.find((t) => t.id === id)
+    setDeleteConfirm({
+      isOpen: true,
+      type: "tutorial",
+      id,
+      name: tutorial?.title || "Tutorial",
+    })
+  }
 
+  const confirmDeleteTutorial = async () => {
+    if (!deleteConfirm.id) return
+    setIsDeleting(true)
     try {
-      await deleteTutorial(id)
+      const res = await fetch('/api/admin/tutorials/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: deleteConfirm.id }),
+      })
+
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}))
+        throw new Error(json?.error || 'Erro ao excluir tutorial')
+      }
+      const tutorial = tutorials.find((t) => t.id === deleteConfirm.id)
       if (tutorial) {
         addAdminLog({
           adminId: user.id,
           adminName: user.name,
           action: "Excluiu tutorial",
           targetType: "tutorial",
-          targetId: id,
+          targetId: deleteConfirm.id,
           targetName: tutorial.title,
         })
       }
     } catch (error) {
       console.error('Erro ao excluir tutorial:', error)
+    } finally {
+      setIsDeleting(false)
+      setDeleteConfirm({ isOpen: false, type: null, id: null, name: null })
     }
   }
 
   const handleDeleteComment = (tutorialId: string, commentId: string, commentContent: string) => {
-    deleteComment(tutorialId, commentId)
-    addAdminLog({
-      adminId: user.id,
-      adminName: user.name,
-      action: "Excluiu comentário",
-      targetType: "comment",
-      targetId: commentId,
-      targetName: commentContent.substring(0, 50) + "...",
+    setDeleteConfirm({
+      isOpen: true,
+      type: "comment",
+      id: commentId,
+      name: commentContent.substring(0, 50) + "...",
+      tutorialId,
     })
+  }
+
+  const confirmDeleteComment = () => {
+    if (!deleteConfirm.id || !deleteConfirm.tutorialId) return
+    setIsDeleting(true)
+    try {
+      deleteComment(deleteConfirm.tutorialId, deleteConfirm.id)
+      addAdminLog({
+        adminId: user.id,
+        adminName: user.name,
+        action: "Excluiu comentário",
+        targetType: "comment",
+        targetId: deleteConfirm.id,
+        targetName: deleteConfirm.name || "Comentário",
+      })
+    } catch (error) {
+      console.error('Erro ao excluir comentário:', error)
+    } finally {
+      setIsDeleting(false)
+      setDeleteConfirm({ isOpen: false, type: null, id: null, name: null })
+    }
   }
 
   const handleBanUser = (userId: string) => {
@@ -216,16 +313,35 @@ export default function AdminPage() {
 
   const handleDeleteUser = async (userId: string) => {
     const targetUser = users.find((u) => u.id === userId)
-    await deleteUser(userId)
-    if (targetUser) {
-      addAdminLog({
-        adminId: user.id,
-        adminName: user.name,
-        action: "Excluiu usuário",
-        targetType: "user",
-        targetId: userId,
-        targetName: targetUser.name,
-      })
+    setDeleteConfirm({
+      isOpen: true,
+      type: "user",
+      id: userId,
+      name: targetUser?.name || "Usuário",
+    })
+  }
+
+  const confirmDeleteUser = async () => {
+    if (!deleteConfirm.id) return
+    setIsDeleting(true)
+    try {
+      await deleteUser(deleteConfirm.id)
+      const targetUser = users.find((u) => u.id === deleteConfirm.id)
+      if (targetUser) {
+        addAdminLog({
+          adminId: user.id,
+          adminName: user.name,
+          action: "Excluiu usuário",
+          targetType: "user",
+          targetId: deleteConfirm.id,
+          targetName: targetUser.name,
+        })
+      }
+    } catch (error) {
+      console.error('Erro ao excluir usuário:', error)
+    } finally {
+      setIsDeleting(false)
+      setDeleteConfirm({ isOpen: false, type: null, id: null, name: null })
     }
   }
 
@@ -246,31 +362,69 @@ export default function AdminPage() {
 
   const handleDeleteProblem = async (problemId: string) => {
     const problem = problems.find((p) => p.id === problemId)
-    await deleteProblem(problemId)
-    if (problem) {
-      addAdminLog({
-        adminId: user.id,
-        adminName: user.name,
-        action: "Excluiu problema",
-        targetType: "problem",
-        targetId: problemId,
-        targetName: problem.description.substring(0, 50) + "...",
-      })
+    setDeleteConfirm({
+      isOpen: true,
+      type: "problem",
+      id: problemId,
+      name: problem?.description.substring(0, 50) + "..." || "Problema",
+    })
+  }
+
+  const confirmDeleteProblem = async () => {
+    if (!deleteConfirm.id) return
+    setIsDeleting(true)
+    try {
+      await deleteProblem(deleteConfirm.id)
+      const problem = problems.find((p) => p.id === deleteConfirm.id)
+      if (problem) {
+        addAdminLog({
+          adminId: user.id,
+          adminName: user.name,
+          action: "Excluiu problema",
+          targetType: "problem",
+          targetId: deleteConfirm.id,
+          targetName: problem.description.substring(0, 50) + "...",
+        })
+      }
+    } catch (error) {
+      console.error('Erro ao excluir problema:', error)
+    } finally {
+      setIsDeleting(false)
+      setDeleteConfirm({ isOpen: false, type: null, id: null, name: null })
     }
   }
 
   const handleDeleteRequest = async (requestId: string) => {
     const request = requests.find((r) => r.id === requestId)
-    await deleteRequest(requestId)
-    if (request) {
-      addAdminLog({
-        adminId: user.id,
-        adminName: user.name,
-        action: "Excluiu requisição",
-        targetType: "request",
-        targetId: requestId,
-        targetName: request.title,
-      })
+    setDeleteConfirm({
+      isOpen: true,
+      type: "request",
+      id: requestId,
+      name: request?.title || "Requisição",
+    })
+  }
+
+  const confirmDeleteRequest = async () => {
+    if (!deleteConfirm.id) return
+    setIsDeleting(true)
+    try {
+      await deleteRequest(deleteConfirm.id)
+      const request = requests.find((r) => r.id === deleteConfirm.id)
+      if (request) {
+        addAdminLog({
+          adminId: user.id,
+          adminName: user.name,
+          action: "Excluiu requisição",
+          targetType: "request",
+          targetId: deleteConfirm.id,
+          targetName: request.title,
+        })
+      }
+    } catch (error) {
+      console.error('Erro ao excluir requisição:', error)
+    } finally {
+      setIsDeleting(false)
+      setDeleteConfirm({ isOpen: false, type: null, id: null, name: null })
     }
   }
 
@@ -291,6 +445,182 @@ export default function AdminPage() {
       u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       u.email.toLowerCase().includes(searchTerm.toLowerCase()),
   )
+
+  useEffect(() => {
+    if (activeTab !== "users") {
+      return
+    }
+
+    let disposed = false
+
+    const initializeTabulator = async () => {
+      if (!usersTableRef.current) return
+
+      const tabulatorModule = await import("tabulator-tables")
+      const Tabulator = (tabulatorModule as any).default ?? tabulatorModule
+
+      const escapeHtml = (value: string) =>
+        value.replace(/[&<>'"]/g, (char) => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          "'": "&#39;",
+          '"': "&quot;",
+        })[char] as string)
+
+      const formatStatus = (isBanned: boolean) =>
+        `<span class="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
+          isBanned
+            ? "bg-red-500/15 text-red-600 dark:text-red-400"
+            : "bg-green-500/15 text-green-600 dark:text-green-400"
+        }">${isBanned ? "Banido" : "Ativo"}</span>`
+
+      const table = new Tabulator(usersTableRef.current, {
+        data: filteredUsers,
+        layout: "fitColumns",
+        placeholder: "Nenhum usuário encontrado",
+        height: "100%",
+        pagination: "local",
+        paginationSize: ITEMS_PER_PAGE,
+        paginationSizeSelector: [10, 20, 50],
+        reactiveData: false,
+        columns: [
+          {
+            title: "Usuário",
+            field: "name",
+            headerSort: true,
+            minWidth: 240,
+            formatter: (cell: any) => {
+              const row = cell.getRow().getData()
+              const initial = String(row.name || "U").charAt(0).toUpperCase()
+              const name = escapeHtml(String(row.name || "Usuário"))
+              const roleIcon = row.role === "ADMIN" ? `<span class="ml-2 text-amber-500">★</span>` : ""
+
+              return `
+                <div class="flex items-center gap-3">
+                  <div class="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-amber-500 to-orange-600 font-bold text-white">
+                    ${escapeHtml(initial)}
+                  </div>
+                  <div class="min-w-0">
+                    <div class="flex items-center gap-1 truncate font-medium text-foreground">
+                      <span class="truncate">${name}</span>
+                      ${roleIcon}
+                    </div>
+                    <div class="text-xs text-muted-foreground md:hidden">${escapeHtml(String(row.email || ""))}</div>
+                  </div>
+                </div>
+              `
+            },
+          },
+          {
+            title: "Email",
+            field: "email",
+            minWidth: 240,
+            responsive: 2,
+            formatter: (cell: any) => `<span class="text-muted-foreground">${escapeHtml(String(cell.getValue() || ""))}</span>`,
+          },
+          {
+            title: "Data",
+            field: "createdAt",
+            minWidth: 140,
+            responsive: 3,
+            formatter: (cell: any) => `<span class="text-muted-foreground">${escapeHtml(String(cell.getValue() || ""))}</span>`,
+          },
+          {
+            title: "Status",
+            field: "banned",
+            hozAlign: "left",
+            width: 120,
+            formatter: (cell: any) => formatStatus(Boolean(cell.getValue())),
+          },
+          {
+            title: "Ações",
+            hozAlign: "right",
+            headerSort: false,
+            widthGrow: 2,
+            minWidth: 220,
+            formatter: (cell: any) => {
+              const row = cell.getRow().getData()
+              const isCurrentUser = row.id === user.id
+              return `
+                <div class="flex justify-end gap-2">
+                  <button data-action="${row.banned ? "unban" : "ban"}" class="inline-flex items-center rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-secondary disabled:opacity-50" ${
+                    isCurrentUser ? "disabled" : ""
+                  }>
+                    ${row.banned ? "Desbanir" : "Banir"}
+                  </button>
+                  <button data-action="${row.role === "ADMIN" ? "demote" : "promote"}" class="inline-flex items-center rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-secondary disabled:opacity-50" ${
+                    isCurrentUser ? "disabled" : ""
+                  }>
+                    ${row.role === "ADMIN" ? "Rebaixar" : "Promover"}
+                  </button>
+                  <button data-action="delete" class="inline-flex items-center rounded-md bg-red-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50" ${
+                    isCurrentUser ? "disabled" : ""
+                  }>
+                    Excluir
+                  </button>
+                </div>
+              `
+            },
+            cellClick: (_e: MouseEvent, cell: any) => {
+              const target = _e.target as HTMLElement | null
+              const actionButton = target?.closest("[data-action]") as HTMLElement | null
+
+              if (!actionButton) return
+
+              const action = actionButton.dataset.action
+              const row = cell.getRow().getData()
+
+              if (action === "ban") handleBanUser(row.id)
+              if (action === "unban") handleUnbanUser(row.id)
+              if (action === "promote") handlePromoteUser(row.id)
+              if (action === "demote") handleDemoteUser(row.id)
+              if (action === "delete") handleDeleteUser(row.id)
+            },
+          },
+        ],
+      })
+
+      usersTabulatorRef.current = table
+
+      if (disposed) {
+        table.destroy()
+        usersTabulatorRef.current = null
+        return
+      }
+    }
+
+    initializeTabulator()
+
+    return () => {
+      disposed = true
+      if (usersTabulatorRef.current) {
+        usersTabulatorRef.current.destroy()
+        usersTabulatorRef.current = null
+      }
+    }
+  }, [activeTab, user.id])
+
+  useEffect(() => {
+    if (activeTab !== "users" || !usersTabulatorRef.current) return
+    usersTabulatorRef.current.replaceData(filteredUsers)
+  }, [filteredUsers, activeTab])
+
+  // Funções para paginação
+  function getPaginatedData<T>(data: T[], page: number) {
+    const start = (page - 1) * ITEMS_PER_PAGE
+    return data.slice(start, start + ITEMS_PER_PAGE)
+  }
+
+  const getTotalPages = (dataLength: number) => Math.ceil(dataLength / ITEMS_PER_PAGE)
+
+  const paginatedTutorials = getPaginatedData(filteredTutorials, currentPage.tutorials)
+  const paginatedComments = getPaginatedData(
+    tutorials.flatMap((t) => t.comments?.map((c) => ({ ...c, tutorialId: t.id })) || []),
+    currentPage.comments,
+  )
+  const paginatedProblems = getPaginatedData(problems, currentPage.problems)
+  const paginatedRequests = getPaginatedData(requests, currentPage.requests)
 
   // Tabs do menu lateral
   const tabs: { id: TabType; label: string; icon: React.ReactNode; badge?: number }[] = [
@@ -514,69 +844,82 @@ export default function AdminPage() {
 
               <div className="space-y-4">
                 {filteredTutorials.length > 0 ? (
-                  filteredTutorials.map((tutorial, index) => (
-                    <div
-                      key={tutorial.id}
-                      className="p-5 bg-card rounded-xl border border-border animate-in fade-in slide-in-from-left-2 duration-300"
-                      style={{ animationDelay: `${index * 50}ms` }}
-                    >
-                      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                        <div className="flex-1">
-                          <div className="flex flex-wrap items-center gap-2 text-sm mb-2">
-                            <span className="text-amber-600 dark:text-amber-400 font-medium">
-                              {tutorial.authorName}
-                            </span>
-                            <span className="text-muted-foreground">•</span>
-                            <span className="text-muted-foreground">{tutorial.createdAt}</span>
-                            <span
-                              className={`px-2 py-0.5 text-xs rounded-full ${
-                                tutorial.approved
-                                  ? "bg-green-500/20 text-green-600 dark:text-green-400"
-                                  : "bg-yellow-500/20 text-yellow-600 dark:text-yellow-400"
-                              }`}
-                            >
-                              {tutorial.approved ? "Aprovado" : "Pendente"}
-                            </span>
-                          </div>
-                          <h3 className="font-semibold text-foreground text-lg mb-1">{tutorial.title}</h3>
-                          <p className="text-sm text-muted-foreground mb-2">{tutorial.description}</p>
-                          <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                            <span className="flex items-center gap-1">
-                              <BookOpen className="w-4 h-4" />
-                              {tutorial.steps.length} passos
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <MessageSquare className="w-4 h-4" />
-                              {tutorial.comments?.length || 0} comentários
-                            </span>
-                            <span className="px-2 py-0.5 bg-secondary rounded-full">{tutorial.category}</span>
+                  <>
+                    {paginatedTutorials.map((tutorial, index) => {
+                      return (
+                        <div
+                          key={tutorial.id}
+                          className="p-5 bg-card rounded-xl border border-border animate-in fade-in slide-in-from-left-2 duration-300"
+                          style={{ animationDelay: `${index * 50}ms` }}
+                        >
+                          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                            <div className="flex-1">
+                              <div className="flex flex-wrap items-center gap-2 text-sm mb-2">
+                                <span className="text-amber-600 dark:text-amber-400 font-medium">
+                                  {tutorial.authorName}
+                                </span>
+                                <span className="text-muted-foreground">•</span>
+                                <span className="text-muted-foreground">{tutorial.createdAt}</span>
+                                <span
+                                  className={`px-2 py-0.5 text-xs rounded-full ${
+                                    tutorial.approved
+                                      ? "bg-green-500/20 text-green-600 dark:text-green-400"
+                                      : "bg-yellow-500/20 text-yellow-600 dark:text-yellow-400"
+                                  }`}
+                                >
+                                  {tutorial.approved ? "Aprovado" : "Pendente"}
+                                </span>
+                              </div>
+                              <h3 className="font-semibold text-foreground text-lg mb-1">{tutorial.title}</h3>
+                              <p className="text-sm text-muted-foreground mb-2">{tutorial.description}</p>
+                              <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                                <span className="flex items-center gap-1">
+                                  <BookOpen className="w-4 h-4" />
+                                  {tutorial.steps.length} passos
+                                </span>
+                                <span className="flex items-center gap-1">
+                                  <MessageSquare className="w-4 h-4" />
+                                  {tutorial.comments?.length || 0} comentários
+                                </span>
+                                <span className="px-2 py-0.5 bg-secondary rounded-full">{tutorial.category}</span>
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              <Link href={`/tutorial/${tutorial.id}`}>
+                                <Button variant="outline" size="sm">
+                                  <Eye className="w-4 h-4 mr-1" />
+                                  Ver
+                                </Button>
+                              </Link>
+                              {!tutorial.approved && (
+                                <Button
+                                  onClick={() => handleApproveTutorial(tutorial.id)}
+                                  size="sm"
+                                  className="bg-green-600 hover:bg-green-700 text-white"
+                                >
+                                  <Check className="w-4 h-4 mr-1" />
+                                  Aprovar
+                                </Button>
+                              )}
+                              <Button onClick={() => handleDeleteTutorial(tutorial.id)} variant="destructive" size="sm">
+                                <Trash2 className="w-4 h-4 mr-1" />
+                                Excluir
+                              </Button>
+                            </div>
                           </div>
                         </div>
-                        <div className="flex gap-2">
-                          <Link href={`/tutorial/${tutorial.id}`}>
-                            <Button variant="outline" size="sm">
-                              <Eye className="w-4 h-4 mr-1" />
-                              Ver
-                            </Button>
-                          </Link>
-                          {!tutorial.approved && (
-                            <Button
-                              onClick={() => handleApproveTutorial(tutorial.id)}
-                              size="sm"
-                              className="bg-green-600 hover:bg-green-700 text-white"
-                            >
-                              <Check className="w-4 h-4 mr-1" />
-                              Aprovar
-                            </Button>
-                          )}
-                          <Button onClick={() => handleDeleteTutorial(tutorial.id)} variant="destructive" size="sm">
-                            <Trash2 className="w-4 h-4 mr-1" />
-                            Excluir
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  ))
+                      )
+                    })}
+                    <Pagination
+                      currentPage={currentPage.tutorials}
+                      totalPages={getTotalPages(filteredTutorials.length)}
+                      onPageChange={(page) =>
+                        setCurrentPage((prev) => ({ ...prev, tutorials: page }))
+                      }
+                      itemsPerPage={ITEMS_PER_PAGE}
+                      totalItems={filteredTutorials.length}
+                    />
+                  </>
                 ) : (
                   <div className="text-center py-12 bg-card rounded-xl border border-border">
                     <BookOpen className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
@@ -596,41 +939,43 @@ export default function AdminPage() {
               </div>
 
               <div className="space-y-4">
-                {tutorials.filter((t) => t.comments && t.comments.length > 0).length > 0 ? (
-                  tutorials
-                    .filter((t) => t.comments && t.comments.length > 0)
-                    .map((tutorial) => (
-                      <div key={tutorial.id} className="bg-card rounded-xl border border-border overflow-hidden">
-                        <div className="p-4 bg-secondary/50 border-b border-border">
-                          <h3 className="font-semibold text-foreground">{tutorial.title}</h3>
-                          <p className="text-sm text-muted-foreground">{tutorial.comments?.length} comentários</p>
-                        </div>
-                        <div className="p-4 space-y-3">
-                          {tutorial.comments?.map((comment) => (
-                            <div
-                              key={comment.id}
-                              className="flex items-start justify-between gap-4 p-3 bg-secondary/30 rounded-lg"
-                            >
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <span className="font-medium text-foreground text-sm">{comment.userName}</span>
-                                  <span className="text-xs text-muted-foreground">{comment.createdAt}</span>
-                                </div>
-                                <p className="text-sm text-muted-foreground">{comment.content}</p>
-                              </div>
-                              <Button
-                                onClick={() => handleDeleteComment(tutorial.id, comment.id, comment.content)}
-                                variant="ghost"
-                                size="sm"
-                                className="text-red-500 hover:text-red-600 hover:bg-red-500/10"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
+                {paginatedComments.length > 0 ? (
+                  <>
+                    {paginatedComments.map((comment) => {
+                      const tutorial = tutorials.find((t) => t.id === (comment as any).tutorialId)
+                      return (
+                        <div
+                          key={comment.id}
+                          className="flex items-start justify-between gap-4 p-3 bg-card rounded-xl border border-border"
+                        >
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-medium text-foreground text-sm">{comment.userName}</span>
+                              <span className="text-xs text-muted-foreground">{comment.createdAt}</span>
                             </div>
-                          ))}
+                            <p className="text-sm text-muted-foreground mb-2">{comment.content}</p>
+                            <p className="text-xs text-muted-foreground">Tutorial: {tutorial?.title || '—'}</p>
+                          </div>
+                          <Button
+                            onClick={() => handleDeleteComment((comment as any).tutorialId, comment.id, comment.content)}
+                            variant="ghost"
+                            size="sm"
+                            className="text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
                         </div>
-                      </div>
-                    ))
+                      )
+                    })}
+
+                    <Pagination
+                      currentPage={currentPage.comments}
+                      totalPages={getTotalPages(tutorials.flatMap((t) => t.comments || []).length)}
+                      onPageChange={(page) => setCurrentPage((prev) => ({ ...prev, comments: page }))}
+                      itemsPerPage={ITEMS_PER_PAGE}
+                      totalItems={tutorials.flatMap((t) => t.comments || []).length}
+                    />
+                  </>
                 ) : (
                   <div className="text-center py-12 bg-card rounded-xl border border-border">
                     <MessageSquare className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
@@ -661,106 +1006,10 @@ export default function AdminPage() {
               </div>
 
               <div className="bg-card rounded-xl border border-border overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="bg-secondary/50 border-b border-border">
-                        <th className="text-left p-4 font-medium text-foreground">Usuário</th>
-                        <th className="text-left p-4 font-medium text-foreground hidden md:table-cell">Email</th>
-                        <th className="text-left p-4 font-medium text-foreground hidden lg:table-cell">Data</th>
-                        <th className="text-left p-4 font-medium text-foreground">Status</th>
-                        <th className="text-right p-4 font-medium text-foreground">Ações</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredUsers.map((u) => (
-                        <tr
-                          key={u.id}
-                          className="border-b border-border last:border-0 hover:bg-secondary/30 transition-colors"
-                        >
-                          <td className="p-4">
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 bg-gradient-to-br from-amber-500 to-orange-600 rounded-full flex items-center justify-center text-white font-bold">
-                                {u.name[0]}
-                              </div>
-                              <div>
-                                <p className="font-medium text-foreground flex items-center gap-2">
-                                  {u.name}
-                                  {u.role === "ADMIN" && <Crown className="w-4 h-4 text-amber-500" />}
-                                </p>
-                                <p className="text-xs text-muted-foreground md:hidden">{u.email}</p>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="p-4 text-muted-foreground hidden md:table-cell">{u.email}</td>
-                          <td className="p-4 text-muted-foreground hidden lg:table-cell">{u.createdAt}</td>
-                          <td className="p-4">
-                            <span
-                              className={`px-2 py-1 text-xs rounded-full ${
-                                u.banned
-                                  ? "bg-red-500/20 text-red-600 dark:text-red-400"
-                                  : "bg-green-500/20 text-green-600 dark:text-green-400"
-                              }`}
-                            >
-                              {u.banned ? "Banido" : "Ativo"}
-                            </span>
-                          </td>
-                          <td className="p-4">
-                            <div className="flex justify-end gap-2">
-                              {u.banned ? (
-                                <Button
-                                  onClick={() => handleUnbanUser(u.id)}
-                                  variant="outline"
-                                  size="sm"
-                                  className="text-green-600"
-                                >
-                                  <UserCheck className="w-4 h-4" />
-                                </Button>
-                              ) : (
-                                <Button
-                                  onClick={() => handleBanUser(u.id)}
-                                  variant="outline"
-                                  size="sm"
-                                  className="text-red-600"
-                                >
-                                  <Ban className="w-4 h-4" />
-                                </Button>
-                              )}
-                              {u.role === "ADMIN" ? (
-                                <Button
-                                  onClick={() => handleDemoteUser(u.id)}
-                                  variant="outline"
-                                  size="sm"
-                                  className="text-orange-600"
-                                >
-                                  <UserX className="w-4 h-4" />
-                                </Button>
-                              ) : (
-                                <Button
-                                  onClick={() => handlePromoteUser(u.id)}
-                                  variant="outline"
-                                  size="sm"
-                                  className="text-amber-600"
-                                >
-                                  <Crown className="w-4 h-4" />
-                                </Button>
-                              )}
-                              <Button
-                                onClick={() => handleDeleteUser(u.id)}
-                                variant="destructive"
-                                size="sm"
-                                className="text-red-600"
-                                disabled={u.id === user.id}
-                                title={u.id === user.id ? "Não é possível excluir seu próprio usuário" : "Excluir usuário"}
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div ref={usersTableRef} className="tabulator-admin-users min-h-[420px]" />
+                <div className="p-4 border-t border-border flex items-center justify-between text-sm text-muted-foreground">
+                  <span>{filteredUsers.length} usuário(s) encontrado(s)</span>
+                  <span>Use a busca para filtrar a lista</span>
                 </div>
               </div>
             </div>
@@ -775,8 +1024,8 @@ export default function AdminPage() {
               </div>
 
               <div className="space-y-4">
-                {problems.length > 0 ? (
-                  problems.map((problem, index) => {
+                {paginatedProblems.length > 0 ? (
+                  paginatedProblems.map((problem, index) => {
                     const tutorial = tutorials.find((t) => t.id === problem.tutorialId)
                     return (
                       <div
@@ -830,13 +1079,24 @@ export default function AdminPage() {
                       </div>
                     )
                   })
-                ) : (
+                    ) : (
                   <div className="text-center py-12 bg-card rounded-xl border border-border">
                     <Check className="w-12 h-12 text-green-500 mx-auto mb-4" />
                     <p className="text-foreground font-medium mb-2">Tudo em dia!</p>
                     <p className="text-muted-foreground">Nenhum problema relatado</p>
                   </div>
                 )}
+                  {paginatedProblems.length > 0 && (
+                    <div className="pt-4">
+                      <Pagination
+                        currentPage={currentPage.problems}
+                        totalPages={getTotalPages(problems.length)}
+                        onPageChange={(page) => setCurrentPage((prev) => ({ ...prev, problems: page }))}
+                        itemsPerPage={ITEMS_PER_PAGE}
+                        totalItems={problems.length}
+                      />
+                    </div>
+                  )}
               </div>
             </div>
           )}
@@ -850,8 +1110,8 @@ export default function AdminPage() {
               </div>
 
               <div className="space-y-4">
-                {requests.length > 0 ? (
-                  requests.map((request, index) => (
+                {paginatedRequests.length > 0 ? (
+                  paginatedRequests.map((request, index) => (
                     <div
                       key={request.id}
                       className="p-5 bg-card rounded-xl border border-border animate-in fade-in slide-in-from-left-2 duration-300"
@@ -878,12 +1138,23 @@ export default function AdminPage() {
                       </div>
                     </div>
                   ))
-                ) : (
+                  ) : (
                   <div className="text-center py-12 bg-card rounded-xl border border-border">
                     <HelpCircle className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
                     <p className="text-muted-foreground">Nenhuma requisição encontrada</p>
                   </div>
                 )}
+                  {paginatedRequests.length > 0 && (
+                    <div className="pt-4">
+                      <Pagination
+                        currentPage={currentPage.requests}
+                        totalPages={getTotalPages(requests.length)}
+                        onPageChange={(page) => setCurrentPage((prev) => ({ ...prev, requests: page }))}
+                        itemsPerPage={ITEMS_PER_PAGE}
+                        totalItems={requests.length}
+                      />
+                    </div>
+                  )}
               </div>
             </div>
           )}
@@ -1008,6 +1279,44 @@ export default function AdminPage() {
             </div>
           )}
         </main>
+
+        {/* Dialog de Confirmação de Delete */}
+        <ConfirmDeleteDialog
+          isOpen={deleteConfirm.isOpen}
+          title={`Deletar ${
+            deleteConfirm.type === "tutorial"
+              ? "tutorial"
+              : deleteConfirm.type === "comment"
+                ? "comentário"
+                : deleteConfirm.type === "user"
+                  ? "usuário"
+                  : deleteConfirm.type === "problem"
+                    ? "problema"
+                    : "requisição"
+          }?`}
+          description={`Tem certeza que deseja deletar "${deleteConfirm.name}"? Esta ação não pode ser desfeita.`}
+          onConfirm={async () => {
+            switch (deleteConfirm.type) {
+              case "tutorial":
+                await confirmDeleteTutorial()
+                break
+              case "comment":
+                confirmDeleteComment()
+                break
+              case "user":
+                await confirmDeleteUser()
+                break
+              case "problem":
+                await confirmDeleteProblem()
+                break
+              case "request":
+                await confirmDeleteRequest()
+                break
+            }
+          }}
+          onCancel={() => setDeleteConfirm({ isOpen: false, type: null, id: null, name: null })}
+          isLoading={isDeleting}
+        />
       </div>
     </div>
   )

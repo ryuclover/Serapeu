@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { User, Mail, Save, Loader2, Shield } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
+import { profileUpdateSchema } from "@/lib/types"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -14,6 +15,7 @@ export default function ProfilePage() {
   const [name, setName] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
+  const [errors, setErrors] = useState<Record<string, string>>({})
 
   useEffect(() => {
     if (user) {
@@ -27,6 +29,23 @@ export default function ProfilePage() {
     e.preventDefault()
     setIsLoading(true)
     setMessage(null)
+    setErrors({})
+
+    // Validar com Zod
+    const validation = profileUpdateSchema.safeParse({ name })
+
+    if (!validation.success) {
+      const fieldErrors: Record<string, string> = {}
+      validation.error.errors.forEach((error) => {
+        const path = error.path[0]?.toString()
+        if (path) {
+          fieldErrors[path] = error.message
+        }
+      })
+      setErrors(fieldErrors)
+      setIsLoading(false)
+      return
+    }
 
     const { error } = await updateProfile(name)
 
@@ -97,10 +116,13 @@ export default function ProfilePage() {
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="pl-10"
+                  className={`pl-10 ${errors.name ? 'border-red-500 focus:ring-red-500' : ''}`}
                   placeholder="Seu nome"
                 />
               </div>
+              {errors.name && (
+                <p className="text-sm text-red-600 dark:text-red-400">{errors.name}</p>
+              )}
             </div>
 
             <div className="pt-4">
