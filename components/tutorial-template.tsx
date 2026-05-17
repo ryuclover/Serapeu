@@ -306,8 +306,11 @@ function TutorialProblems({
 
 function TutorialComments({ user, comments, onCreateComment }: { user: UserType | null; comments: Comment[]; onCreateComment: (content: string) => Promise<void> }) {
   const { deleteComment } = useAuth()
+  const { editComment } = useAuth()
   const [commentText, setCommentText] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingText, setEditingText] = useState("")
 
   const handleSubmit = async () => {
     const trimmed = commentText.trim()
@@ -322,6 +325,14 @@ function TutorialComments({ user, comments, onCreateComment }: { user: UserType 
   const handleDelete = async (commentId: string, tutorialId: string) => {
     if (!user) return
     await deleteComment(tutorialId, commentId)
+  }
+
+  const handleEdit = async (commentId: string, tutorialId: string) => {
+    if (!user) return
+    if (!editingText.trim()) return
+    await editComment(tutorialId, commentId, editingText.trim())
+    setEditingId(null)
+    setEditingText("")
   }
 
   return (
@@ -375,16 +386,48 @@ function TutorialComments({ user, comments, onCreateComment }: { user: UserType 
                   <p className="font-medium text-foreground text-sm">{comment.userName}</p>
                   <p className="text-muted-foreground text-xs">{comment.createdAt}</p>
                 </div>
-                {(user?.id === comment.userId || user?.role === 'ADMIN') && (
-                  <button
-                    onClick={() => handleDelete(comment.id, comment.tutorialId)}
-                    className="text-destructive text-xs font-medium hover:underline"
-                  >
-                    Excluir
-                  </button>
-                )}
+                <div className="flex gap-2">
+                  {(user?.id === comment.userId || user?.role === 'ADMIN') && (
+                    <>
+                      <button
+                        onClick={() => {
+                          setEditingId(comment.id)
+                          setEditingText(comment.content)
+                        }}
+                        className="text-foreground text-xs font-medium hover:underline"
+                      >
+                        Editar
+                      </button>
+                      <button
+                        onClick={() => handleDelete(comment.id, comment.tutorialId)}
+                        className="text-destructive text-xs font-medium hover:underline"
+                      >
+                        Excluir
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
-              <p className="text-muted-foreground text-sm">{comment.content}</p>
+              {editingId === comment.id ? (
+                <div>
+                  <textarea
+                    value={editingText}
+                    onChange={(e) => setEditingText(e.target.value)}
+                    className="w-full px-4 py-3 bg-input border border-border rounded-xl text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"
+                    rows={3}
+                  />
+                  <div className="flex gap-2 mt-2">
+                    <button onClick={() => handleEdit(comment.id, comment.tutorialId)} className="px-3 py-1 bg-amber-600 text-white rounded">
+                      Salvar
+                    </button>
+                    <button onClick={() => { setEditingId(null); setEditingText("") }} className="px-3 py-1 bg-secondary rounded">
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-sm">{comment.content}</p>
+              )}
             </div>
           ))}
         </div>

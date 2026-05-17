@@ -56,18 +56,18 @@ export function Footer() {
           <div>
             <h4 className="font-semibold text-foreground mb-4">Legal</h4>
             <nav className="space-y-2">
-              <button className="block text-sm text-muted-foreground hover:text-amber-600 dark:hover:text-amber-400 transition-colors">
+              <Link href="/termos" className="block text-sm text-muted-foreground hover:text-amber-600 dark:hover:text-amber-400 transition-colors">
                 Termos de Uso
-              </button>
-              <button className="block text-sm text-muted-foreground hover:text-amber-600 dark:hover:text-amber-400 transition-colors">
+              </Link>
+              <Link href="/privacidade" className="block text-sm text-muted-foreground hover:text-amber-600 dark:hover:text-amber-400 transition-colors">
                 Privacidade
-              </button>
-              <button className="block text-sm text-muted-foreground hover:text-amber-600 dark:hover:text-amber-400 transition-colors">
+              </Link>
+              <Link href="/regras" className="block text-sm text-muted-foreground hover:text-amber-600 dark:hover:text-amber-400 transition-colors">
                 Regras da Comunidade
-              </button>
-              <button className="block text-sm text-muted-foreground hover:text-amber-600 dark:hover:text-amber-400 transition-colors">
+              </Link>
+              <Link href="/contato" className="block text-sm text-muted-foreground hover:text-amber-600 dark:hover:text-amber-400 transition-colors">
                 Contato
-              </button>
+              </Link>
               {/* Admin link removed */}
             </nav>
           </div>

@@ -94,6 +94,183 @@ export default function AdminPage() {
   const ITEMS_PER_PAGE = 10
   const usersTableRef = useRef<HTMLDivElement | null>(null)
   const usersTabulatorRef = useRef<any>(null)
+  const currentUserId = user?.id ?? null
+
+  const getFilteredUsers = () =>
+    users.filter(
+      (u) =>
+        u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        u.email.toLowerCase().includes(searchTerm.toLowerCase()),
+    )
+
+  useEffect(() => {
+    if (activeTab !== "users" || !currentUserId) {
+      return
+    }
+
+    let disposed = false
+
+    const initializeTabulator = async () => {
+      if (!usersTableRef.current) return
+
+      const filteredUsersData = getFilteredUsers()
+      const tabulatorModule = await import("tabulator-tables")
+      const Tabulator =
+        (tabulatorModule as any).default ??
+        (tabulatorModule as any).TabulatorFull ??
+        (tabulatorModule as any)
+
+      if (typeof Tabulator !== "function") {
+        console.error("[Admin] Tabulator constructor not found", tabulatorModule)
+        return
+      }
+
+      const escapeHtml = (value: string) =>
+        value.replace(/[&<>'"]/g, (char) => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          "'": "&#39;",
+          '"': "&quot;",
+        })[char] as string)
+
+      const formatStatus = (isBanned: boolean) =>
+        `<span class="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
+          isBanned
+            ? "bg-red-500/15 text-red-600 dark:text-red-400"
+            : "bg-green-500/15 text-green-600 dark:text-green-400"
+        }">${isBanned ? "Banido" : "Ativo"}</span>`
+
+      const table = new Tabulator(usersTableRef.current, {
+        data: filteredUsersData,
+        layout: "fitColumns",
+        placeholder: "Nenhum usuário encontrado",
+        height: "100%",
+        pagination: "local",
+        paginationSize: ITEMS_PER_PAGE,
+        paginationSizeSelector: [10, 20, 50],
+        reactiveData: false,
+        columns: [
+          {
+            title: "Usuário",
+            field: "name",
+            headerSort: true,
+            minWidth: 240,
+            formatter: (cell: any) => {
+              const row = cell.getRow().getData()
+              const initial = String(row.name || "U").charAt(0).toUpperCase()
+              const name = escapeHtml(String(row.name || "Usuário"))
+              const roleIcon = row.role === "ADMIN" ? `<span class="ml-2 text-amber-500">★</span>` : ""
+
+              return `
+                <div class="flex items-center gap-3">
+                  <div class="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-amber-500 to-orange-600 font-bold text-white">
+                    ${escapeHtml(initial)}
+                  </div>
+                  <div class="min-w-0">
+                    <div class="flex items-center gap-1 truncate font-medium text-foreground">
+                      <span class="truncate">${name}</span>
+                      ${roleIcon}
+                    </div>
+                    <div class="text-xs text-muted-foreground md:hidden">${escapeHtml(String(row.email || ""))}</div>
+                  </div>
+                </div>
+              `
+            },
+          },
+          {
+            title: "Email",
+            field: "email",
+            minWidth: 240,
+            responsive: 2,
+            formatter: (cell: any) => `<span class="text-muted-foreground">${escapeHtml(String(cell.getValue() || ""))}</span>`,
+          },
+          {
+            title: "Data",
+            field: "createdAt",
+            minWidth: 140,
+            responsive: 3,
+            formatter: (cell: any) => `<span class="text-muted-foreground">${escapeHtml(String(cell.getValue() || ""))}</span>`,
+          },
+          {
+            title: "Status",
+            field: "banned",
+            hozAlign: "left",
+            width: 120,
+            formatter: (cell: any) => formatStatus(Boolean(cell.getValue())),
+          },
+          {
+            title: "Ações",
+            hozAlign: "right",
+            headerSort: false,
+            widthGrow: 2,
+            minWidth: 220,
+            formatter: (cell: any) => {
+              const row = cell.getRow().getData()
+              const isCurrentUser = row.id === currentUserId
+              return `
+                <div class="flex justify-end gap-2">
+                  <button data-action="${row.banned ? "unban" : "ban"}" class="inline-flex items-center rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-secondary disabled:opacity-50" ${
+                    isCurrentUser ? "disabled" : ""
+                  }>
+                    ${row.banned ? "Desbanir" : "Banir"}
+                  </button>
+                  <button data-action="${row.role === "ADMIN" ? "demote" : "promote"}" class="inline-flex items-center rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-secondary disabled:opacity-50" ${
+                    isCurrentUser ? "disabled" : ""
+                  }>
+                    ${row.role === "ADMIN" ? "Rebaixar" : "Promover"}
+                  </button>
+                  <button data-action="delete" class="inline-flex items-center rounded-md bg-red-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50" ${
+                    isCurrentUser ? "disabled" : ""
+                  }>
+                    Excluir
+                  </button>
+                </div>
+              `
+            },
+            cellClick: (_e: MouseEvent, cell: any) => {
+              const target = _e.target as HTMLElement | null
+              const actionButton = target?.closest("[data-action]") as HTMLElement | null
+
+              if (!actionButton) return
+
+              const action = actionButton.dataset.action
+              const row = cell.getRow().getData()
+
+              if (action === "ban") handleBanUser(row.id)
+              if (action === "unban") handleUnbanUser(row.id)
+              if (action === "promote") handlePromoteUser(row.id)
+              if (action === "demote") handleDemoteUser(row.id)
+              if (action === "delete") handleDeleteUser(row.id)
+            },
+          },
+        ],
+      })
+
+      usersTabulatorRef.current = table
+
+      if (disposed) {
+        table.destroy()
+        usersTabulatorRef.current = null
+        return
+      }
+    }
+
+    initializeTabulator()
+
+    return () => {
+      disposed = true
+      if (usersTabulatorRef.current) {
+        usersTabulatorRef.current.destroy()
+        usersTabulatorRef.current = null
+      }
+    }
+  }, [activeTab, users, searchTerm, currentUserId])
+
+  useEffect(() => {
+    if (activeTab !== "users" || !usersTabulatorRef.current) return
+    usersTabulatorRef.current.replaceData(getFilteredUsers())
+  }, [users, searchTerm, activeTab])
 
   if (!authReady) {
     return (
@@ -445,166 +622,6 @@ export default function AdminPage() {
       u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       u.email.toLowerCase().includes(searchTerm.toLowerCase()),
   )
-
-  useEffect(() => {
-    if (activeTab !== "users") {
-      return
-    }
-
-    let disposed = false
-
-    const initializeTabulator = async () => {
-      if (!usersTableRef.current) return
-
-      const tabulatorModule = await import("tabulator-tables")
-      const Tabulator = (tabulatorModule as any).default ?? tabulatorModule
-
-      const escapeHtml = (value: string) =>
-        value.replace(/[&<>'"]/g, (char) => ({
-          "&": "&amp;",
-          "<": "&lt;",
-          ">": "&gt;",
-          "'": "&#39;",
-          '"': "&quot;",
-        })[char] as string)
-
-      const formatStatus = (isBanned: boolean) =>
-        `<span class="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
-          isBanned
-            ? "bg-red-500/15 text-red-600 dark:text-red-400"
-            : "bg-green-500/15 text-green-600 dark:text-green-400"
-        }">${isBanned ? "Banido" : "Ativo"}</span>`
-
-      const table = new Tabulator(usersTableRef.current, {
-        data: filteredUsers,
-        layout: "fitColumns",
-        placeholder: "Nenhum usuário encontrado",
-        height: "100%",
-        pagination: "local",
-        paginationSize: ITEMS_PER_PAGE,
-        paginationSizeSelector: [10, 20, 50],
-        reactiveData: false,
-        columns: [
-          {
-            title: "Usuário",
-            field: "name",
-            headerSort: true,
-            minWidth: 240,
-            formatter: (cell: any) => {
-              const row = cell.getRow().getData()
-              const initial = String(row.name || "U").charAt(0).toUpperCase()
-              const name = escapeHtml(String(row.name || "Usuário"))
-              const roleIcon = row.role === "ADMIN" ? `<span class="ml-2 text-amber-500">★</span>` : ""
-
-              return `
-                <div class="flex items-center gap-3">
-                  <div class="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-amber-500 to-orange-600 font-bold text-white">
-                    ${escapeHtml(initial)}
-                  </div>
-                  <div class="min-w-0">
-                    <div class="flex items-center gap-1 truncate font-medium text-foreground">
-                      <span class="truncate">${name}</span>
-                      ${roleIcon}
-                    </div>
-                    <div class="text-xs text-muted-foreground md:hidden">${escapeHtml(String(row.email || ""))}</div>
-                  </div>
-                </div>
-              `
-            },
-          },
-          {
-            title: "Email",
-            field: "email",
-            minWidth: 240,
-            responsive: 2,
-            formatter: (cell: any) => `<span class="text-muted-foreground">${escapeHtml(String(cell.getValue() || ""))}</span>`,
-          },
-          {
-            title: "Data",
-            field: "createdAt",
-            minWidth: 140,
-            responsive: 3,
-            formatter: (cell: any) => `<span class="text-muted-foreground">${escapeHtml(String(cell.getValue() || ""))}</span>`,
-          },
-          {
-            title: "Status",
-            field: "banned",
-            hozAlign: "left",
-            width: 120,
-            formatter: (cell: any) => formatStatus(Boolean(cell.getValue())),
-          },
-          {
-            title: "Ações",
-            hozAlign: "right",
-            headerSort: false,
-            widthGrow: 2,
-            minWidth: 220,
-            formatter: (cell: any) => {
-              const row = cell.getRow().getData()
-              const isCurrentUser = row.id === user.id
-              return `
-                <div class="flex justify-end gap-2">
-                  <button data-action="${row.banned ? "unban" : "ban"}" class="inline-flex items-center rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-secondary disabled:opacity-50" ${
-                    isCurrentUser ? "disabled" : ""
-                  }>
-                    ${row.banned ? "Desbanir" : "Banir"}
-                  </button>
-                  <button data-action="${row.role === "ADMIN" ? "demote" : "promote"}" class="inline-flex items-center rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-secondary disabled:opacity-50" ${
-                    isCurrentUser ? "disabled" : ""
-                  }>
-                    ${row.role === "ADMIN" ? "Rebaixar" : "Promover"}
-                  </button>
-                  <button data-action="delete" class="inline-flex items-center rounded-md bg-red-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50" ${
-                    isCurrentUser ? "disabled" : ""
-                  }>
-                    Excluir
-                  </button>
-                </div>
-              `
-            },
-            cellClick: (_e: MouseEvent, cell: any) => {
-              const target = _e.target as HTMLElement | null
-              const actionButton = target?.closest("[data-action]") as HTMLElement | null
-
-              if (!actionButton) return
-
-              const action = actionButton.dataset.action
-              const row = cell.getRow().getData()
-
-              if (action === "ban") handleBanUser(row.id)
-              if (action === "unban") handleUnbanUser(row.id)
-              if (action === "promote") handlePromoteUser(row.id)
-              if (action === "demote") handleDemoteUser(row.id)
-              if (action === "delete") handleDeleteUser(row.id)
-            },
-          },
-        ],
-      })
-
-      usersTabulatorRef.current = table
-
-      if (disposed) {
-        table.destroy()
-        usersTabulatorRef.current = null
-        return
-      }
-    }
-
-    initializeTabulator()
-
-    return () => {
-      disposed = true
-      if (usersTabulatorRef.current) {
-        usersTabulatorRef.current.destroy()
-        usersTabulatorRef.current = null
-      }
-    }
-  }, [activeTab, user.id])
-
-  useEffect(() => {
-    if (activeTab !== "users" || !usersTabulatorRef.current) return
-    usersTabulatorRef.current.replaceData(filteredUsers)
-  }, [filteredUsers, activeTab])
 
   // Funções para paginação
   function getPaginatedData<T>(data: T[], page: number) {

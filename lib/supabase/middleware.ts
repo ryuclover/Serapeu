@@ -40,17 +40,10 @@ export async function updateSession(request: NextRequest) {
     if (!user) {
       return NextResponse.redirect(new URL('/entrar', request.url))
     }
-    
-    // Check role from profiles table directly in middleware
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single()
-      
-    if (profile?.role !== 'ADMIN') {
-      return NextResponse.redirect(new URL('/', request.url)) // Redirect to home if not admin
-    }
+
+    // Role checks happen in server routes and app auth context.
+    // Avoid querying profiles in middleware to prevent false negatives
+    // caused by RLS/policy behavior in edge runtime.
   }
 
   // Rotas de usuário logado: apenas autenticado pode acessar

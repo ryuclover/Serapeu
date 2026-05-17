@@ -9,10 +9,11 @@ import { useAuth } from "@/lib/auth-context"
 // import { Navbar } from "@/components/navbar"
 import { categories } from "@/lib/types"
 import { toast } from "sonner"
+import { Loader2 } from "lucide-react"
 
 export default function CreateTutorialPage() {
   const router = useRouter()
-  const { user, refreshData } = useAuth()
+  const { user, authReady, refreshData } = useAuth()
 
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
@@ -59,7 +60,16 @@ export default function CreateTutorialPage() {
       }
 
       toast.success(json?.approved ? 'Tutorial publicado com sucesso!' : 'Tutorial enviado para aprovação!')
-      await refreshData()
+      
+      // Refresh data with timeout to prevent hanging
+      const refreshPromise = refreshData().catch(err => {
+        console.warn('Error refreshing data:', err)
+      })
+      
+      // Wait max 2 seconds for refresh, then redirect
+      const timeoutPromise = new Promise(resolve => setTimeout(resolve, 2000))
+      await Promise.race([refreshPromise, timeoutPromise])
+      
       router.push('/')
     } catch (error: any) {
       console.error('Error creating tutorial:', error)
@@ -67,6 +77,18 @@ export default function CreateTutorialPage() {
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  if (!authReady) {
+    return (
+      <div className="bg-background min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin text-amber-600 mx-auto mb-4" />
+          <h1 className="text-2xl font-bold text-foreground mb-2">Carregando painel</h1>
+          <p className="text-muted-foreground">Verificando sua sessão de usuário...</p>
+        </div>
+      </div>
+    )
   }
 
   if (!user) {

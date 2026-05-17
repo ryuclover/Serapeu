@@ -89,6 +89,7 @@ interface AuthContextType {
   addAdminLog: (log: Omit<AdminLog, "id" | "createdAt">) => void
   createComment: (tutorialId: string, content: string) => Promise<void>
   deleteComment: (tutorialId: string, commentId: string) => Promise<void>
+  editComment: (tutorialId: string, commentId: string, content: string) => Promise<void>
   reportProblem: (problem: Omit<TutorialProblem, "id" | "createdAt" | "resolved">) => Promise<void>
   resolveProblem: (problemId: string) => Promise<void>
   deleteProblem: (problemId: string) => Promise<void>
@@ -170,6 +171,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
+    // Safety valve: avoid indefinite loading UIs if session bootstrap stalls.
+    const authReadySafetyTimeout = setTimeout(() => {
+      setAuthReady((prev) => (prev ? prev : true))
+    }, 8000)
+
     const initializeSession = async () => {
       try {
         const {
@@ -190,6 +196,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.error('[Auth] Exception during initial session load:', err)
       } finally {
         setAuthReady(true)
+        clearTimeout(authReadySafetyTimeout)
       }
     }
 
@@ -216,7 +223,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     })
 
-    return () => subscription?.unsubscribe?.()
+    return () => {
+      clearTimeout(authReadySafetyTimeout)
+      subscription?.unsubscribe?.()
+    }
   }, [])
 
   const refreshDataFromServer = async () => {
@@ -241,6 +251,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error('[refreshDataFromServer] Exception:', err)
     }
   }
+
+  useEffect(() => {
+    if (!user?.id) return
+
+    // Session restoration can happen after the initial boot. Re-sync data when user becomes available.
+    refreshData()
+
+    if (user.role === 'ADMIN') {
+      refreshDataFromServer()
+    }
+  }, [user?.id, user?.role])
 
   const refreshData = async () => {
     console.log('[refreshData] Starting data refresh...')
@@ -692,60 +713,114 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       toast.error('Você precisa estar logado para comentar.')
       return
     }
-
-    const { data, error } = await supabase
-      .from('comments')
-      .insert({
-        tutorial_id: tutorialId,
-        user_id: user.id,
-        user_name: user.name,
-        content,
+    try {
+      const res = await fetch('/api/comments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tutorialId, content }),
+        credentials: 'include',
       })
-      .select('*')
-      .single()
 
-    if (error || !data) {
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}))
+        throw new Error(json?.error || 'Erro ao postar comentário')
+      }
+
+      const json = await res.json()
+      const data = json.comment
+
+      const newComment: Comment = {
+        id: data.id,
+        tutorialId: data.tutorial_id,
+        userId: data.user_id,
+        userName: data.user_name,
+        content: data.content,
+        createdAt: new Date(data.created_at).toLocaleDateString('pt-BR'),
+      }
+
+      addCommentToTutorial(tutorialId, newComment)
+    } catch (error: any) {
       logError('createComment', error, { tutorialId, userName: user.name })
       toast.error('Não foi possível postar o comentário.')
-      return
     }
-
-    const newComment: Comment = {
-      id: data.id,
-      tutorialId: data.tutorial_id,
-      userId: data.user_id,
-      userName: data.user_name,
-      content: data.content,
-      createdAt: new Date(data.created_at).toLocaleDateString('pt-BR'),
-    }
-
-    addCommentToTutorial(tutorialId, newComment)
   }
 
   const deleteComment = async (tutorialId: string, commentId: string) => {
-    const { error } = await supabase
-      .from('comments')
-      .delete()
-      .eq('id', commentId)
-      .eq('tutorial_id', tutorialId)
+    try {
+      const res = await fetch('/api/comments/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tutorialId, commentId }),
+        credentials: 'include',
+      })
 
-    if (error) {
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}))
+        throw new Error(json?.error || 'Erro ao deletar comentário')
+      }
+
+      setTutorials((prev) =>
+        prev.map((t) => {
+          if (t.id === tutorialId && t.comments) {
+            return {
+              ...t,
+              comments: t.comments.filter((c) => c.id !== commentId),
+            }
+          }
+          return t
+        }),
+      )
+    } catch (error: any) {
       logError('deleteComment', error, { commentId, tutorialId })
       toast.error('Não foi possível deletar o comentário.')
+    }
+  }
+
+  const editComment = async (tutorialId: string, commentId: string, content: string) => {
+    if (!user) {
+      toast.error('Você precisa estar logado para editar comentários.')
       return
     }
 
-    setTutorials((prev) =>
-      prev.map((t) => {
-        if (t.id === tutorialId && t.comments) {
-          return {
-            ...t,
-            comments: t.comments.filter((c) => c.id !== commentId),
+    try {
+      const res = await fetch('/api/comments/edit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tutorialId, commentId, content }),
+        credentials: 'include',
+      })
+
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}))
+        throw new Error(json?.error || 'Erro ao editar comentário')
+      }
+
+      const json = await res.json()
+      const data = json.comment
+
+      setTutorials((prev) =>
+        prev.map((t) => {
+          if (t.id === tutorialId && t.comments) {
+            return {
+              ...t,
+              comments: t.comments.map((c) => {
+                if (c.id === commentId) {
+                  const createdAt = data.created_at ? new Date(data.created_at).toLocaleDateString('pt-BR') : c.createdAt
+                  return { ...c, content: data.content, createdAt }
+                }
+                return c
+              }),
+            }
           }
-        }
-        return t
-      }),
-    )
+          return t
+        }),
+      )
+
+      toast.success('Comentário atualizado.')
+    } catch (error: any) {
+      logError('editComment', error, { tutorialId, commentId })
+      toast.error('Não foi possível editar o comentário.')
+    }
   }
 
   const reportProblem = async (problem: Omit<TutorialProblem, "id" | "createdAt" | "resolved">) => {
@@ -973,6 +1048,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         adminLogs,
         addAdminLog,
         createComment,
+        editComment,
         deleteComment,
         reportProblem,
         banUser,
