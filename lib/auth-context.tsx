@@ -185,6 +185,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (session?.user) {
           await applySessionToUser(session)
         }
+        return session
       } catch (err) {
         console.error('[Auth] Exception during initial session load:', err)
       } finally {
@@ -192,9 +193,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    initializeSession()
-    refreshData() // Load data for normal users (RLS)
-    refreshDataFromServer() // Load data for admins (Service Role)
+    const boot = async () => {
+      const session = await initializeSession()
+      await refreshData() // Load data for normal users (RLS)
+      // Only try to load admin/service-role data if there's a session (reduces 401s)
+      if (session?.user) {
+        await refreshDataFromServer()
+      }
+    }
+
+    boot()
 
     // Setup auth state listener - ONLY ONE, SIMPLE LISTENER
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
