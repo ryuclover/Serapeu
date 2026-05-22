@@ -303,11 +303,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       console.warn('[refreshData] Tutorial error:', tutorialsError)
       toast.error('Não foi possível carregar os tutoriais.')
-      const formattedTutorials: Tutorial[] = initialTutorials.map((t) => ({
-        ...t,
-        createdAt: t.createdAt || new Date().toLocaleDateString('pt-BR'),
-      }))
-      setTutorials([])
+      // Fallback to demo data when DB fetch fails
+      setTutorials(initialTutorials)
     } else {
       console.log('[refreshData] Processing tutorials:', tutorialsData?.length || 0)
       const formattedTutorials: Tutorial[] = ((tutorialsData || []) as SupabaseTutorialRow[]).map((t) => {
