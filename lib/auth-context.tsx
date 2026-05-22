@@ -107,6 +107,9 @@ interface AuthContextType {
   refreshDataFromServer: () => Promise<void>
 }
 
+// Validate Supabase configuration before initializing client
+validateSupabaseConfig();
+const supabase = createClient();
 const AuthContext = createContext<AuthContextType | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -119,7 +122,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [users, setUsers] = useState<UserType[]>([])
   const [adminLogs, setAdminLogs] = useState<AdminLog[]>([])
   
-  const supabase = createClient()
+  // Validate Supabase environment variables early
+  validateSupabaseConfig();
 
   const applySessionToUser = async (session: any) => {
     console.log('[Auth] Applying session to user:', session.user.id)
@@ -326,8 +330,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       // If we got 0 tutorials from DB, fallback to initialTutorials for demo/dev
       if (formattedTutorials.length === 0) {
-        console.log('[refreshData] No tutorials in DB, using initialTutorials')
-        setTutorials([])
+          console.log('[refreshData] No tutorials in DB, using initialTutorials')
+          setTutorials(initialTutorials)
       } else {
           console.log('[refreshData] Setting tutorials from DB:', formattedTutorials.length)
           setTutorials(formattedTutorials)
@@ -460,11 +464,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [darkMode])
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     })
-    return { error }
+    if (error) {
+      toast.error('Falha ao fazer login: ' + (error.message || 'Erro desconhecido'))
+      return { error }
+    }
+    // Get the session after sign in
+    const { data: { session }, error: sessErr } = await supabase.auth.getSession()
+    if (sessErr || !session?.user) {
+      return { error: sessErr || new Error('Session not available') }
+    }
+    // Apply session to user state
+    await applySessionToUser(session)
+    // Refresh data for the logged-in user
+    await refreshData()
+    return { error: null }
   }
 
   const signUp = async (email: string, password: string, name: string) => {
