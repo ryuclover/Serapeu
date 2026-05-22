@@ -5,7 +5,7 @@ import type React from "react"
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
 import type { UserType, Tutorial, TutorialProblem, TutorialRequest, Comment, AdminLog } from "./types"
 import { initialTutorials, initialRequests } from "./types"
-import { createClient } from "@/lib/supabase/client"
+import { createClient, validateSupabaseConfig } from "@/lib/supabase/client"
 import { logError, getUserFriendlyErrorMessage } from "@/lib/utils"
 import { toast } from "sonner"
 

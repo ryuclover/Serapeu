@@ -17,9 +17,11 @@ export function createClient() {
  * Call this early to catch configuration issues.
  */
 export function validateSupabaseConfig() {
-    if (!url || !key) {
-      console.warn('[Supabase Config] Missing env vars:', { hasUrl: !!url, hasKey: !!key });
-      return false;
-    }
-    return true;
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key) {
+    console.warn('[Supabase Config] Missing env vars:', { hasUrl: !!url, hasKey: !!key });
+    return false;
+  }
+  return true;
 }

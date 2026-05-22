@@ -13,7 +13,7 @@ export default function HomePage() {
   const { user, tutorials } = useAuth()
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
 
-  const approvedTutorials = tutorials.filter((t) => t.approved !== false)
+  const approvedTutorials = tutorials; // Show all tutorials to everyone
 
   const filteredTutorials = approvedTutorials.filter((t) => {
     const matchesSearch =
