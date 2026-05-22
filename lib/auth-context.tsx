@@ -275,6 +275,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let { data: tutorialsData, error: tutorialsError } = await supabase
       .from('tutorials')
       .select('*, profiles(name)')
+      .eq('approved', true)
       .order('created_at', { ascending: false })
 
     console.log('[refreshData] Tutorials response:', { count: tutorialsData?.length, error: tutorialsError })
