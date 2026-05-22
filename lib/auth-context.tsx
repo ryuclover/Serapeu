@@ -329,8 +329,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.log('[refreshData] No tutorials in DB, using initialTutorials')
         setTutorials([])
       } else {
-        console.log('[refreshData] Setting tutorials from DB:', formattedTutorials.length)
-        setTutorials([])
+          console.log('[refreshData] Setting tutorials from DB:', formattedTutorials.length)
+          setTutorials(formattedTutorials)
       }
     }
 
