@@ -11,12 +11,11 @@ function broadcastSession(session) {
   if (authChannel) {
     authChannel.postMessage({ type: "session", session })
   }
-  // Also sync via localStorage (fallback for browsers without BroadcastChannel)
+  // Sync via localStorage (fallback and for storage events). Include timestamp to ensure change detection.
   try {
-    const payload = { type: session ? "login" : "logout", session: session || null };
+    const payload = { type: session ? "login" : "logout", session: session || null, ts: Date.now() };
     localStorage.setItem("auth-session-sync", JSON.stringify(payload));
-    // Remove quickly to avoid stale data
-    setTimeout(() => localStorage.removeItem("auth-session-sync"), 0);
+    // Do not remove immediately; keep the entry so other tabs can read it.
   } catch (e) {
     console.warn('[Auth] Failed to use localStorage for session sync', e);
   }
@@ -541,11 +540,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const handleMessage = async (e) => {
       if (e?.data?.type === "session") {
-        const session = e.data.session
+        const session = e.data.session;
         if (session?.user) {
-          await applySessionToUser(session)
+          // Set Supabase client session and apply user state
+          await supabase.auth.setSession(session);
+          await applySessionToUser(session);
+          // Persist session for newly opened tabs
+          try {
+            localStorage.setItem('auth-session-persist', JSON.stringify(session));
+          } catch (err) {
+            console.warn('[Auth] Failed to persist session from broadcast', err);
+          }
+          // Refresh data for this tab
+          await refreshData();
         } else {
-          setUser(null)
+          await supabase.auth.setSession(null);
+          setUser(null);
+          // Clear persisted session on logout
+          try { localStorage.removeItem('auth-session-persist'); } catch (err) { console.warn('[Auth] Failed to clear persisted session on logout broadcast', err); }
         }
       }
     }
@@ -557,9 +569,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
           const payload = JSON.parse(e.newValue)
           if (payload.type === "login" && payload.session) {
+            // Set Supabase client session for subsequent API calls
+            await supabase.auth.setSession(payload.session)
             await applySessionToUser(payload.session)
+            // Refresh data after login sync
+            await refreshData();
           } else if (payload.type === "logout") {
+            await supabase.auth.setSession(null)
             setUser(null)
+            // Clear persisted session on logout sync
+            try { localStorage.removeItem('auth-session-persist'); } catch (err) { console.warn('[Auth] Failed to clear persisted session on logout sync', err); }
           }
         } catch (err) {
           console.warn('[Auth] Failed to parse storage sync payload', err)
