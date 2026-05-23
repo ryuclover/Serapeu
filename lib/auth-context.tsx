@@ -256,16 +256,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  useEffect(() => {
-    if (!user?.id) return
-
-    // Session restoration can happen after the initial boot. Re-sync data when user becomes available.
-    refreshData()
-
-    if (user.role === 'ADMIN') {
-      refreshDataFromServer()
+  // Load public tutorials for all visitors (approved only)
+  const loadPublicTutorials = async () => {
+    console.log('[Public] Loading approved tutorials for unauthenticated users');
+    try {
+      const { data, error } = await supabase
+        .from('tutorials')
+        .select('*, profiles(name)')
+        .eq('approved', true)
+        .order('created_at', { ascending: false });
+      if (error) {
+        console.warn('[Public] Error loading tutorials:', error);
+        toast.error('Não foi possível carregar os tutoriais públicos.');
+        setTutorials(initialTutorials);
+        return;
+      }
+      const formatted: Tutorial[] = ((data || []) as SupabaseTutorialRow[]).map((t) => {
+        const profile = Array.isArray(t.profiles) ? t.profiles[0] : t.profiles;
+        return {
+          id: t.id,
+          title: t.title,
+          description: t.description,
+          steps: t.steps || [],
+          authorId: t.author_id,
+          authorName: profile?.name || 'Usuário',
+          category: t.category,
+          createdAt: new Date(t.created_at).toLocaleDateString('pt-BR'),
+          approved: t.approved,
+          upvotes: t.upvotes ?? 0,
+          comments: [],
+        };
+      });
+      if (formatted.length === 0) {
+        console.log('[Public] No approved tutorials in DB, using defaults');
+        setTutorials(initialTutorials);
+      } else {
+        setTutorials(formatted);
+      }
+    } catch (e) {
+      console.error('[Public] Exception loading tutorials:', e);
+      toast.error('Erro inesperado ao carregar tutoriais.');
+      setTutorials(initialTutorials);
     }
-  }, [user?.id, user?.role])
+  };
+
+  // Load public tutorials on initial mount (unauthenticated users)
+  useEffect(() => {
+    loadPublicTutorials();
+  }, []);
+
 
   const refreshData = async () => {
     console.log('[refreshData] Starting data refresh...')
