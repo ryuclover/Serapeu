@@ -618,14 +618,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
       // Apply session to user state
       await applySessionToUser(session)
+      // Persistir sessão após login bem‑sucedido
+      try {
+        localStorage.setItem('auth-session-persist', JSON.stringify(session));
+      } catch (e) {
+        console.warn('[Auth] Failed to persist session after signIn', e);
+      }
       // Broadcast login event to other tabs (or fallback)
       broadcastSession(session)
-    // Persistir sessão após login bem‑sucedido
-    try {
-      localStorage.setItem('auth-session-persist', JSON.stringify(session));
-    } catch (e) {
-      console.warn('[Auth] Failed to persist session after signIn', e);
-    }
     // Também restaura a sessão no cliente Supabase (necessário para chamadas autenticadas)
     await supabase.auth.setSession(session);
 
