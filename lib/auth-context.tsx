@@ -3,8 +3,25 @@
 import type React from "react"
 
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
-const SESSION_CHANNEL = "auth-session";
-const authChannel = typeof window !== "undefined" ? new BroadcastChannel(SESSION_CHANNEL) : null;
+const SESSION_CHANNEL = "auth-session"
+const authChannel = typeof window !== "undefined" && typeof BroadcastChannel !== "undefined" ? new BroadcastChannel(SESSION_CHANNEL) : null
+// Helper to broadcast session changes with fallback to localStorage
+function broadcastSession(session) {
+  if (authChannel) {
+    authChannel.postMessage({ type: "session", session })
+  } else if (typeof window !== "undefined") {
+    // Use localStorage as a simple sync mechanism
+    const payload = { type: session ? "login" : "logout", session: session || null }
+    try {
+      localStorage.setItem("auth-session-sync", JSON.stringify(payload))
+      // Cleanup to avoid stale data
+      setTimeout(() => localStorage.removeItem("auth-session-sync"), 0)
+    } catch (e) {
+      console.warn('[Auth] Failed to use localStorage for session sync', e)
+    }
+  }
+}
+
 import type { UserType, Tutorial, TutorialProblem, TutorialRequest, Comment, AdminLog } from "./types"
 import { initialTutorials, initialRequests } from "./types"
 import { createClient, validateSupabaseConfig } from "@/lib/supabase/client"
@@ -196,6 +213,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (session?.user) {
           await applySessionToUser(session)
+          broadcastSession(session)
         }
         return session
       } catch (err) {
@@ -223,12 +241,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (session?.user) {
           await applySessionToUser(session)
-          // Broadcast login if not already broadcasted (e.g., from other tab)
-          authChannel?.postMessage({ type: "login" })
+          // Broadcast login (or fallback)
+          broadcastSession(session)
         } else {
           console.log('[Auth] Logged out')
           setUser(null)
-          authChannel?.postMessage({ type: "logout" })
+          broadcastSession(null)
         }
       })
 
@@ -505,24 +523,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [darkMode])
 
-  // Listen for auth events from other tabs via BroadcastChannel
+  // Listen for auth events from other tabs via BroadcastChannel or localStorage fallback
   useEffect(() => {
-    if (!authChannel) return;
-    const handleMessage = async (e: MessageEvent) => {
-      if (e.data?.type === "login") {
-        const { data: { session } } = await supabase.auth.getSession();
+    const handleMessage = async (e) => {
+      if (e?.data?.type === "session") {
+        const session = e.data.session
         if (session?.user) {
-          await applySessionToUser(session);
+          await applySessionToUser(session)
+        } else {
+          setUser(null)
         }
-      } else if (e.data?.type === "logout") {
-        setUser(null);
       }
-    };
-    authChannel.addEventListener("message", handleMessage);
+    }
+    if (authChannel) {
+      authChannel.addEventListener("message", handleMessage)
+    }
+    const storageHandler = async (e) => {
+      if (e.key === "auth-session-sync" && e.newValue) {
+        try {
+          const payload = JSON.parse(e.newValue)
+          if (payload.type === "login" && payload.session) {
+            await applySessionToUser(payload.session)
+          } else if (payload.type === "logout") {
+            setUser(null)
+          }
+        } catch (err) {
+          console.warn('[Auth] Failed to parse storage sync payload', err)
+        }
+      }
+    }
+    window.addEventListener("storage", storageHandler)
     return () => {
-      authChannel.removeEventListener("message", handleMessage);
-    };
-  }, []);
+      if (authChannel) authChannel.removeEventListener("message", handleMessage)
+      window.removeEventListener("storage", storageHandler)
+    }
+  }, [])
 
   const signIn = async (email: string, password: string) => {
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -540,8 +575,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
       // Apply session to user state
       await applySessionToUser(session)
-      // Broadcast login event to other tabs
-      authChannel?.postMessage({ type: "login" })
+      // Broadcast login event to other tabs (or fallback)
+      broadcastSession(session)
       // Refresh data for the logged-in user
       await refreshData()
       return { error: null }
@@ -597,8 +632,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       // Always clear user state
       setUser(null)
-      // Broadcast logout event to other tabs
-      authChannel?.postMessage({ type: "logout" })
+      // Broadcast logout event to other tabs (or fallback)
+      broadcastSession(null)
     } catch (err) {
       console.error('[Auth] Exception during logout:', err)
       // Still clear user state even if exception
