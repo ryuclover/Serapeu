@@ -611,27 +611,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { error }
     }
 
-        const { data: { session }, error: sessErr } = await supabase.auth.getSession();;
+        // Retrieve the freshly created session after signIn
+        const { data: { session }, error: sessErr } = await supabase.auth.getSession();
+        if (sessErr || !session?.user) {
+          return { error: sessErr || new Error('Session not available') };
+        }
+        // Set Supabase session first
+        await supabase.auth.setSession(session);
+        // Apply session to user state
+        await applySessionToUser(session);
+        // Persist session for other tabs
+        try {
+          localStorage.setItem('auth-session-persist', JSON.stringify(session));
+        } catch (e) {
+          console.warn('[Auth] Failed to persist session after signIn', e);
+        }
+        // Broadcast login to other tabs (or fallback)
+        broadcastSession(session);
+        // Refresh data for the logged‑in user
+        await refreshData();
+        return { error: null };
 
-    if (sessErr || !session?.user) {
-      return { error: sessErr || new Error('Session not available') }
-    }
-      // Apply session to user state
-      await applySessionToUser(session)
-      // Persistir sessão após login bem‑sucedido
-      try {
-        localStorage.setItem('auth-session-persist', JSON.stringify(session));
-      } catch (e) {
-        console.warn('[Auth] Failed to persist session after signIn', e);
-      }
-      // Broadcast login event to other tabs (or fallback)
-      broadcastSession(session)
-    // Também restaura a sessão no cliente Supabase (necessário para chamadas autenticadas)
-    await supabase.auth.setSession(session);
-
-       // Refresh data for the logged-in user
-       await refreshData()
-       return { error: null }
   }
 
   const signUp = async (email: string, password: string, name: string) => {
