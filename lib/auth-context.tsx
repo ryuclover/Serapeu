@@ -3,6 +3,8 @@
 import type React from "react"
 
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
+const SESSION_CHANNEL = "auth-session";
+const authChannel = typeof window !== "undefined" ? new BroadcastChannel(SESSION_CHANNEL) : null;
 import type { UserType, Tutorial, TutorialProblem, TutorialRequest, Comment, AdminLog } from "./types"
 import { initialTutorials, initialRequests } from "./types"
 import { createClient, validateSupabaseConfig } from "@/lib/supabase/client"
@@ -216,21 +218,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     boot()
 
     // Setup auth state listener - ONLY ONE, SIMPLE LISTENER
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('[Auth] Auth state changed:', event, session?.user?.id)
-      
-      if (session?.user) {
-        await applySessionToUser(session)
-      } else {
-        console.log('[Auth] Logged out')
-        setUser(null)
-      }
-    })
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        console.log('[Auth] Auth state changed:', event, session?.user?.id)
 
-    return () => {
-      clearTimeout(authReadySafetyTimeout)
-      subscription?.unsubscribe?.()
-    }
+        if (session?.user) {
+          await applySessionToUser(session)
+          // Broadcast login if not already broadcasted (e.g., from other tab)
+          authChannel?.postMessage({ type: "login" })
+        } else {
+          console.log('[Auth] Logged out')
+          setUser(null)
+          authChannel?.postMessage({ type: "logout" })
+        }
+      })
+
+      return () => {
+        clearTimeout(authReadySafetyTimeout)
+        subscription?.unsubscribe?.()
+      }
   }, [])
 
   const refreshDataFromServer = async () => {
@@ -500,6 +505,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [darkMode])
 
+  // Listen for auth events from other tabs via BroadcastChannel
+  useEffect(() => {
+    if (!authChannel) return;
+    const handleMessage = async (e: MessageEvent) => {
+      if (e.data?.type === "login") {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          await applySessionToUser(session);
+        }
+      } else if (e.data?.type === "logout") {
+        setUser(null);
+      }
+    };
+    authChannel.addEventListener("message", handleMessage);
+    return () => {
+      authChannel.removeEventListener("message", handleMessage);
+    };
+  }, []);
+
   const signIn = async (email: string, password: string) => {
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
@@ -514,11 +538,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (sessErr || !session?.user) {
       return { error: sessErr || new Error('Session not available') }
     }
-    // Apply session to user state
-    await applySessionToUser(session)
-    // Refresh data for the logged-in user
-    await refreshData()
-    return { error: null }
+      // Apply session to user state
+      await applySessionToUser(session)
+      // Broadcast login event to other tabs
+      authChannel?.postMessage({ type: "login" })
+      // Refresh data for the logged-in user
+      await refreshData()
+      return { error: null }
   }
 
   const signUp = async (email: string, password: string, name: string) => {
@@ -571,6 +597,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       // Always clear user state
       setUser(null)
+      // Broadcast logout event to other tabs
+      authChannel?.postMessage({ type: "logout" })
     } catch (err) {
       console.error('[Auth] Exception during logout:', err)
       // Still clear user state even if exception
