@@ -562,30 +562,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
     if (authChannel) {
-      authChannel.addEventListener("message", handleMessage)
+      authChannel.addEventListener("message", handleMessage);
+      // Also assign onmessage for compatibility
+      authChannel.onmessage = handleMessage;
     }
     const storageHandler = async (e) => {
       if (e.key === "auth-session-sync" && e.newValue) {
         try {
-          const payload = JSON.parse(e.newValue)
+          const payload = JSON.parse(e.newValue);
           if (payload.type === "login" && payload.session) {
-            // Set Supabase client session for subsequent API calls
-            await supabase.auth.setSession(payload.session)
-            await applySessionToUser(payload.session)
-            // Refresh data after login sync
+            await supabase.auth.setSession(payload.session);
+            await applySessionToUser(payload.session);
             await refreshData();
+            try { localStorage.setItem('auth-session-persist', JSON.stringify(payload.session)); } catch (err) { console.warn('[Auth] Failed to persist session from sync payload', err); }
           } else if (payload.type === "logout") {
-            await supabase.auth.setSession(null)
-            setUser(null)
-            // Clear persisted session on logout sync
+            await supabase.auth.setSession(null);
+            setUser(null);
             try { localStorage.removeItem('auth-session-persist'); } catch (err) { console.warn('[Auth] Failed to clear persisted session on logout sync', err); }
           }
-        } catch (err) {
-          console.warn('[Auth] Failed to parse storage sync payload', err)
-        }
+        } catch (err) { console.warn('[Auth] Failed to parse storage sync payload', err); }
+      } else if (e.key === "auth-session-persist" && e.newValue) {
+        // Direct session persistence change (e.g., from another tab that only updated persist key)
+        try {
+          const session = JSON.parse(e.newValue);
+          if (session?.user) {
+            await supabase.auth.setSession(session);
+            await applySessionToUser(session);
+            // Refresh data after restoring session from persisted storage
+            await refreshData();
+          }
+        } catch (err) { console.warn('[Auth] Failed to parse persisted session from storage event', err); }
       }
-    }
-    window.addEventListener("storage", storageHandler)
+    };
+    window.addEventListener("storage", storageHandler);
     return () => {
       if (authChannel) authChannel.removeEventListener("message", handleMessage)
       window.removeEventListener("storage", storageHandler)
@@ -601,36 +610,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       toast.error('Falha ao fazer login: ' + (error.message || 'Erro desconhecido'))
       return { error }
     }
-    // Primeiro tenta carregar sessão persistida (para abas recém-abertas)
-    const persisted = typeof window !== 'undefined' ? localStorage.getItem('auth-session-persist') : null;
-    if (persisted) {
-      try {
-        const parsed = JSON.parse(persisted);
-        if (parsed?.user) {
-          // Restaura a sessão no cliente Supabase
-          await supabase.auth.setSession(parsed);
-          await applySessionToUser(parsed);
-          broadcastSession(parsed);
-          console.log('[Auth] Restored persisted session');
-          setAuthReady(true);
-          return parsed;
-        }
-      } catch (e) {
-        console.warn('[Auth] Failed to parse persisted session', e);
-      }
-    }
-    // Se não houver sessão persistida, continua com a carga padrão via Supabase
-        // Tenta restaurar a sessão Supabase a partir do armazenamento persistido antes de buscar a sessão atual
-        const persistedBefore = typeof window !== "undefined" ? localStorage.getItem("auth-session-persist") : null;
-        if (persistedBefore) {
-          try {
-            const parsedBefore = JSON.parse(persistedBefore);
-            // Define a sessão no cliente Supabase (necessário para chamadas autenticadas)
-            await supabase.auth.setSession(parsedBefore);
-          } catch (e) {
-            console.warn("[Auth] Falha ao restaurar sessão antes de getSession", e);
-          }
-        }
+
         const { data: { session }, error: sessErr } = await supabase.auth.getSession();;
 
     if (sessErr || !session?.user) {
