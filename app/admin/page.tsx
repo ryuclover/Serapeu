@@ -272,6 +272,14 @@ export default function AdminPage() {
     usersTabulatorRef.current.replaceData(getFilteredUsers())
   }, [users, searchTerm, activeTab])
 
+  // Busca os dados completos de admin ao entrar na página
+  useEffect(() => {
+    if (user?.role === "ADMIN" && !didLoadAdminData.current) {
+      didLoadAdminData.current = true
+      refreshDataFromServer()
+    }
+  }, [user, refreshDataFromServer])
+
   if (!authReady) {
     return (
       <div className="min-h-[80vh] flex items-center justify-center">
