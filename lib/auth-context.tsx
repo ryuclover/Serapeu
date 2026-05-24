@@ -162,23 +162,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const boot = async () => {
       try {
-        // getUser() valida o token diretamente no servidor Supabase (mais seguro que getSession)
-        const { data: { user: authUser }, error } = await supabase.auth.getUser()
-
-        if (error || !authUser) {
-          // Sem sessão válida — usuário não está logado
-          console.log('[Auth] Nenhuma sessão ativa encontrada.')
-        } else {
-          // Sessão válida — carrega o perfil
-          const { data: { session } } = await supabase.auth.getSession()
-          await loadUserFromSession(session)
-        }
-
         await refreshData()
-
-        if (authUser) {
-          await refreshDataFromServer()
-        }
       } catch (err) {
         console.error('[Auth] Erro durante inicialização:', err)
       } finally {
@@ -189,13 +173,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     boot()
 
-    // Listener de mudança de estado — disparado automaticamente pelo Supabase
-    // quando o token é renovado, o usuário faz login/logout em qualquer aba.
+    // Listener de mudança de estado — disparado automaticamente pelo Supabase.
+    // INITIAL_SESSION: disparado ao abrir uma nova aba com sessão existente nos cookies.
+    // SIGNED_IN: disparado ao fazer login.
+    // TOKEN_REFRESHED: disparado ao renovar o token automaticamente.
+    // SIGNED_OUT: disparado ao fazer logout.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('[Auth] Evento:', event)
+      console.log('[Auth] Evento:', event, session?.user?.id ?? 'sem usuário')
 
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-        await loadUserFromSession(session)
+      if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        if (session?.user) {
+          await loadUserFromSession(session)
+          if (event !== 'TOKEN_REFRESHED') {
+            await refreshData()
+          }
+        }
       } else if (event === 'SIGNED_OUT') {
         setUser(null)
       }
