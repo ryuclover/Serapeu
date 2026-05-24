@@ -82,11 +82,31 @@ interface AuthContextType {
 validateSupabaseConfig()
 const AuthContext = createContext<AuthContextType | null>(null)
 
+// Helpers para persistência ultra-agressiva na UI
+const getCachedUser = (): UserType | null => {
+  if (typeof window === 'undefined') return null
+  try {
+    const cached = localStorage.getItem('serapeu-user-cache')
+    return cached ? JSON.parse(cached) : null
+  } catch {
+    return null
+  }
+}
+
+const setCachedUser = (user: UserType | null) => {
+  if (typeof window === 'undefined') return
+  if (user) {
+    localStorage.setItem('serapeu-user-cache', JSON.stringify(user))
+  } else {
+    localStorage.removeItem('serapeu-user-cache')
+  }
+}
+
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [supabase] = useState(() => createClient())
-  const [user, setUser] = useState<UserType | null>(null)
+  const [user, setUser] = useState<UserType | null>(() => getCachedUser())
   const [authReady, setAuthReady] = useState(false)
   const [darkMode, setDarkMode] = useState(true)
   const [tutorials, setTutorials] = useState<Tutorial[]>([])
@@ -112,18 +132,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loadUserFromSession = async (session: any) => {
     if (!session?.user) return
 
-    // Optimistic Update: Set user instantly so UI doesn't wait for /api/auth/me
-    setUser(prev => prev || {
-      id: session.user.id,
-      email: session.user.email!,
-      name: session.user.user_metadata?.name || session.user.email!.split('@')[0],
-      role: "USER",
-      createdAt: session.user.created_at,
-      banned: false,
-      savedTutorials: [],
-      votedTutorials: [],
-    })
-
     try {
       const meResponse = await fetch('/api/auth/me', { credentials: 'include' })
       let profile: { name?: string; role?: string; banned?: boolean } | null = null
@@ -133,32 +141,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         profile = meJson?.user || null
       }
 
-      setUser({
+      const finalUser = {
         id: session.user.id,
         email: session.user.email!,
         name: profile?.name || session.user.user_metadata?.name || session.user.email!.split('@')[0],
-        role: profile?.role === "ADMIN" ? "ADMIN" : "USER",
+        role: (profile?.role === "ADMIN" ? "ADMIN" : "USER") as "USER" | "ADMIN",
         createdAt: session.user.created_at,
         banned: Boolean(profile?.banned),
         savedTutorials: [],
         votedTutorials: [],
-      })
-
-      // Carrega tutoriais salvos e votados
+      }
+      
+      setUser(finalUser)
+      setCachedUser(finalUser)
+      
+      // Carrega dados adicionais (salvos/votados) se não estiver carregando da sessão inicial otimista
       const [{ data: savedData }, { data: votedData }] = await Promise.all([
         supabase.from('saved_tutorials').select('tutorial_id').eq('user_id', session.user.id),
         supabase.from('tutorial_votes').select('tutorial_id').eq('user_id', session.user.id),
       ])
 
-      setUser(prev =>
-        prev
-          ? {
-              ...prev,
-              savedTutorials: savedData?.map((s: any) => s.tutorial_id) ?? [],
-              votedTutorials: votedData?.map((v: any) => v.tutorial_id) ?? [],
-            }
-          : prev
-      )
+      setUser(prev => {
+        if (!prev) return prev
+        const updated = {
+          ...prev,
+          savedTutorials: savedData?.map((s: any) => s.tutorial_id) ?? [],
+          votedTutorials: votedData?.map((v: any) => v.tutorial_id) ?? [],
+        }
+        setCachedUser(updated)
+        return updated
+      })
     } catch (err) {
       console.error('[Auth] Erro ao carregar perfil do usuário:', err)
     }
@@ -226,6 +238,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else if (event === 'SIGNED_OUT') {
         if (typeof window !== 'undefined') {
              localStorage.removeItem('supabase-auth-token');
+             localStorage.removeItem('serapeu-user-cache');
         }
         setUser(null)
       }
@@ -247,6 +260,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } else {
           await supabase.auth.signOut();
         }
+      } else if (e.key === 'serapeu-user-cache') {
+          // Mantém a UI em sincronia imediata (não espera o Supabase resolver o token)
+          if (e.newValue) {
+              try {
+                  setUser(JSON.parse(e.newValue));
+              } catch (err) {}
+          } else {
+              setUser(null);
+          }
       }
     };
     
