@@ -1,30 +1,14 @@
 "use client"
 
 import type React from "react"
-
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
-const SESSION_CHANNEL = "auth-session"
-const authChannel = typeof window !== "undefined" && typeof BroadcastChannel !== "undefined" ? new BroadcastChannel(SESSION_CHANNEL) : null
-// Helper to broadcast session changes with fallback to localStorage
-function broadcastSession(event: 'login' | 'logout') {
-  if (authChannel) {
-    authChannel.postMessage({ type: "session", event })
-  }
-  
-  try {
-    localStorage.setItem("auth-session-sync", JSON.stringify({ event, ts: Date.now() }));
-  } catch (e) {
-    console.warn('[Auth] Failed to use localStorage for session sync', e);
-  }
-}
-
-
-
+import { createContext, useContext, useState, useEffect, useRef, type ReactNode } from "react"
 import type { UserType, Tutorial, TutorialProblem, TutorialRequest, Comment, AdminLog } from "./types"
-import { initialTutorials, initialRequests } from "./types"
+import { initialTutorials } from "./types"
 import { createClient, validateSupabaseConfig } from "@/lib/supabase/client"
 import { logError, getUserFriendlyErrorMessage } from "@/lib/utils"
 import { toast } from "sonner"
+
+// ─── Tipos internos do Supabase ──────────────────────────────────────────────
 
 type SupabaseTutorialRow = {
   id: string
@@ -48,42 +32,11 @@ type SupabaseProfileRow = {
   banned: boolean | null
 }
 
-type SupabaseCommentRow = {
-  id: string
-  tutorial_id: string
-  user_id: string
-  user_name: string
-  content: string
-  created_at: string
-}
+type SupabaseError = { code?: string; message?: string }
 
-type SupabaseProblemRow = {
-  id: string
-  tutorial_id: string
-  user_id: string
-  user_name: string
-  step_number: number | null
-  description: string
-  created_at: string
-  resolved: boolean
-}
+const isProfilesPolicyRecursion = (e: SupabaseError | null | undefined) => e?.code === "42P17"
 
-type SupabaseError = {
-  code?: string
-  message?: string
-}
-
-const isProfilesPolicyRecursion = (error: SupabaseError | null | undefined) => error?.code === "42P17"
-
-
-
-const initialUsers: UserType[] = [
-  { id: "1", email: "bob@expert.com", name: "Bob Expert", role: "USER", createdAt: "01/01/2023", banned: false },
-  { id: "2", email: "maria@chef.com", name: "Maria Chef", role: "USER", createdAt: "15/02/2023", banned: false },
-  { id: "3", email: "carlos@email.com", name: "Carlos Silva", role: "USER", createdAt: "10/03/2023", banned: false },
-  { id: "4", email: "ana@email.com", name: "Ana Costa", role: "USER", createdAt: "20/05/2023", banned: false },
-  { id: "5", email: "pedro@email.com", name: "Pedro Santos", role: "USER", createdAt: "05/08/2023", banned: false },
-]
+// ─── Interface do contexto ────────────────────────────────────────────────────
 
 interface AuthContextType {
   user: UserType | null
@@ -124,10 +77,13 @@ interface AuthContextType {
   refreshDataFromServer: () => Promise<void>
 }
 
-// Validate Supabase configuration before initializing client
-validateSupabaseConfig();
-const supabase = createClient();
+// ─── Inicialização do cliente (singleton) ────────────────────────────────────
+
+validateSupabaseConfig()
+const supabase = createClient()
 const AuthContext = createContext<AuthContextType | null>(null)
+
+// ─── Provider ─────────────────────────────────────────────────────────────────
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserType | null>(null)
@@ -138,371 +94,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [requests, setRequests] = useState<TutorialRequest[]>([])
   const [users, setUsers] = useState<UserType[]>([])
   const [adminLogs, setAdminLogs] = useState<AdminLog[]>([])
-  
-  // Validate Supabase environment variables early
-  validateSupabaseConfig();
 
-  const applySessionToUser = async (session: any) => {
-    console.log('[Auth] Applying session to user:', session.user.id)
+  // Ref para evitar múltiplas inicializações simultâneas
+  const initializingRef = useRef(false)
 
-    const meResponse = await fetch('/api/auth/me', {
-      credentials: 'include',
-    })
-
-    let profile: { name?: string; role?: string; banned?: boolean } | null = null
-
-    if (meResponse.ok) {
-      const meJson = await meResponse.json().catch(() => null)
-      profile = meJson?.user || null
-    } else {
-      console.warn('[Auth] Failed to load profile from /api/auth/me')
-    }
-    
-    setUser({
-      id: session.user.id,
-      email: session.user.email!,
-      name: profile?.name || session.user.user_metadata?.name || session.user.email!.split('@')[0],
-      role: profile?.role === "ADMIN" ? "ADMIN" : "USER",
-      createdAt: session.user.created_at,
-      banned: Boolean(profile?.banned),
-      savedTutorials: [],
-      votedTutorials: [],
-    })
-
-    // Fetch saved/voted tutorials
-    const { data: savedData } = await supabase
-      .from('saved_tutorials')
-      .select('tutorial_id')
-      .eq('user_id', session.user.id)
-
-    const { data: votedData } = await supabase
-      .from('tutorial_votes')
-      .select('tutorial_id')
-      .eq('user_id', session.user.id)
-
-    setUser((prev) =>
-      prev
-        ? {
-            ...prev,
-            savedTutorials: savedData ? savedData.map((s: any) => s.tutorial_id) : [],
-            votedTutorials: votedData ? votedData.map((v: any) => v.tutorial_id) : [],
-          }
-        : prev,
-    )
-  }
-
-  useEffect(() => {
-    // Safety valve: avoid indefinite loading UIs if session bootstrap stalls.
-    const authReadySafetyTimeout = setTimeout(() => {
-      setAuthReady((prev) => (prev ? prev : true))
-    }, 8000)
-
-    const boot = async () => {
-      try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        
-        if (error) {
-          console.error('[Auth] Failed to get initial session:', error);
-        }
-
-        if (session?.user) {
-          await applySessionToUser(session);
-        }
-
-        await refreshData(); // Load data for normal users (RLS)
-        
-        if (session?.user) {
-          await refreshDataFromServer();
-        }
-      } catch (err) {
-        console.error('[Auth] Exception during boot:', err);
-      } finally {
-        clearTimeout(authReadySafetyTimeout);
-        setAuthReady(true);
-      }
-    }
-
-    boot()
-
-    // Setup auth state listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('[Auth] Auth state changed:', event, session?.user?.id)
-
-      if (session?.user) {
-        await applySessionToUser(session)
-        broadcastSession('login')
-      } else {
-        console.log('[Auth] Logged out')
-        setUser(null)
-        broadcastSession('logout')
-      }
-    })
-
-    return () => {
-      clearTimeout(authReadySafetyTimeout)
-      subscription?.unsubscribe?.()
-    }
-  }, [])
-
-  const refreshDataFromServer = async () => {
-    console.log('[refreshDataFromServer] Fetching data from server endpoint...')
-
-    try {
-      const response = await fetch('/api/admin/data')
-      const result = await response.json()
-
-      console.log('[refreshDataFromServer] Response:', result)
-
-      if (result.success) {
-        console.log('[refreshDataFromServer] Setting data from server')
-        setTutorials(result.tutorials || [])
-        setUsers(result.users || [])
-        setProblems(result.problems || [])
-        setRequests(result.requests || [])
-      } else {
-        console.warn('[refreshDataFromServer] Server error:', result.error)
-      }
-    } catch (err) {
-      console.error('[refreshDataFromServer] Exception:', err)
-    }
-  }
-
-  // Load public tutorials for all visitors (approved only)
-  const loadPublicTutorials = async () => {
-    console.log('[Public] Loading approved tutorials for unauthenticated users');
-    try {
-      const { data, error } = await supabase
-        .from('tutorials')
-        .select('*, profiles(name)')
-        .eq('approved', true)
-        .order('created_at', { ascending: false });
-      if (error) {
-        console.warn('[Public] Error loading tutorials:', error);
-        toast.error('Não foi possível carregar os tutoriais públicos.');
-        setTutorials(initialTutorials);
-        return;
-      }
-      const formatted: Tutorial[] = ((data || []) as SupabaseTutorialRow[]).map((t) => {
-        const profile = Array.isArray(t.profiles) ? t.profiles[0] : t.profiles;
-        return {
-          id: t.id,
-          title: t.title,
-          description: t.description,
-          steps: t.steps || [],
-          authorId: t.author_id,
-          authorName: profile?.name || 'Usuário',
-          category: t.category,
-          createdAt: new Date(t.created_at).toLocaleDateString('pt-BR'),
-          approved: t.approved,
-          upvotes: t.upvotes ?? 0,
-          comments: [],
-        };
-      });
-      if (formatted.length === 0) {
-        console.log('[Public] No approved tutorials in DB, using defaults');
-        setTutorials(initialTutorials);
-      } else {
-        setTutorials(formatted);
-      }
-    } catch (e) {
-      console.error('[Public] Exception loading tutorials:', e);
-      toast.error('Erro inesperado ao carregar tutoriais.');
-      setTutorials(initialTutorials);
-    }
-  };
-
-  // Load public tutorials on initial mount (unauthenticated users)
-  useEffect(() => {
-    loadPublicTutorials();
-  }, []);
-
-
-  const refreshData = async () => {
-    console.log('[refreshData] Starting data refresh...')
-
-    // Fetch Tutorials
-    console.log('[refreshData] Fetching tutorials...')
-    let { data: tutorialsData, error: tutorialsError } = await supabase
-      .from('tutorials')
-      .select('*, profiles(name)')
-      .eq('approved', true)
-      .order('created_at', { ascending: false })
-
-    console.log('[refreshData] Tutorials response:', { count: tutorialsData?.length, error: tutorialsError })
-
-    // Fallback: se houver recursao de policy em profiles, busca sem join.
-    if ((tutorialsError as SupabaseError | null)?.code === '42P17') {
-      console.log('[refreshData] Got 42P17 error, trying fallback query...')
-      const fallback = await supabase
-        .from('tutorials')
-        .select('*')
-        .order('created_at', { ascending: false })
-
-      tutorialsData = fallback.data
-      tutorialsError = fallback.error
-      console.log('[refreshData] Fallback response:', { count: tutorialsData?.length, error: tutorialsError })
-    }
-
-    if (tutorialsError) {
-      if (isProfilesPolicyRecursion(tutorialsError as SupabaseError)) {
-        console.log('[refreshData] Profile recursion policy error, clearing data')
-        setTutorials([])
-        setRequests([])
-        setUsers([])
-        return
-      }
-
-      console.warn('[refreshData] Tutorial error:', tutorialsError)
-      toast.error('Não foi possível carregar os tutoriais.')
-      // Fallback to demo data when DB fetch fails
-      setTutorials(initialTutorials)
-    } else {
-      console.log('[refreshData] Processing tutorials:', tutorialsData?.length || 0)
-      const formattedTutorials: Tutorial[] = ((tutorialsData || []) as SupabaseTutorialRow[]).map((t) => {
-        const profile = Array.isArray(t.profiles) ? t.profiles[0] : t.profiles
-
-        return {
-          id: t.id,
-          title: t.title,
-          description: t.description,
-          steps: t.steps || [],
-          authorId: t.author_id,
-          authorName: profile?.name || 'Usuário',
-          category: t.category,
-          createdAt: new Date(t.created_at).toLocaleDateString('pt-BR'),
-          approved: t.approved,
-          upvotes: t.upvotes ?? 0,
-          comments: [],
-        }
-      })
-      
-      // If we got 0 tutorials from DB, fallback to initialTutorials for demo/dev
-      if (formattedTutorials.length === 0) {
-          console.log('[refreshData] No tutorials in DB, using initialTutorials')
-          setTutorials(initialTutorials)
-      } else {
-          console.log('[refreshData] Setting tutorials from DB:', formattedTutorials.length)
-          setTutorials(formattedTutorials)
-      }
-    }
-
-    // Fetch Comments
-    const { data: commentsData, error: commentsError } = await supabase.from('comments').select('*')
-    const commentsByTutorial = (commentsData || []).reduce<Record<string, Comment[]>>((acc, comment: any) => {
-      if (!acc[comment.tutorial_id]) acc[comment.tutorial_id] = []
-      acc[comment.tutorial_id].push({
-        id: comment.id,
-        tutorialId: comment.tutorial_id,
-        userId: comment.user_id,
-        userName: comment.user_name,
-        content: comment.content,
-        createdAt: new Date(comment.created_at).toLocaleDateString('pt-BR'),
-      })
-      return acc
-    }, {})
-
-    if (commentsError) {
-      console.warn('Erro ao carregar comentários:', commentsError)
-    }
-
-    setTutorials((prev) =>
-      prev.map((tutorial) => ({
-        ...tutorial,
-        comments: commentsByTutorial[tutorial.id] || tutorial.comments || [],
-      })),
-    )
-
-    // Fetch Problems
-    const { data: problemsData, error: problemsError } = await supabase.from('tutorial_problems').select('*')
-    if (problemsError) {
-      console.warn('Erro ao carregar problemas:', problemsError)
-    } else {
-      const formattedProblems: TutorialProblem[] = (problemsData || []).map((problem: any) => ({
-        id: problem.id,
-        tutorialId: problem.tutorial_id,
-        userId: problem.user_id,
-        userName: problem.user_name,
-        stepNumber: problem.step_number,
-        description: problem.description,
-        createdAt: new Date(problem.created_at).toLocaleDateString('pt-BR'),
-        resolved: problem.resolved,
-      }))
-      setProblems(formattedProblems)
-    }
-
-    // Fetch Requests
-    let { data: requestsData, error: requestsError } = await supabase
-      .from('tutorial_requests')
-      .select('*, profiles(name)')
-      .order('created_at', { ascending: false })
-
-    // Fallback: se houver recursao de policy em profiles, busca sem join.
-    if ((requestsError as SupabaseError | null)?.code === '42P17') {
-      const fallback = await supabase
-        .from('tutorial_requests')
-        .select('*')
-        .order('created_at', { ascending: false })
-
-      requestsData = fallback.data
-      requestsError = fallback.error
-    }
-
-    if (requestsError) {
-      if (isProfilesPolicyRecursion(requestsError as SupabaseError)) {
-        setRequests([])
-        setUsers([])
-        return
-      }
-
-      console.warn('Erro ao carregar requisições:', requestsError)
-      setRequests([])
-    } else if (requestsData) {
-      const formattedRequests: TutorialRequest[] = requestsData.map((r: any) => ({
-        id: r.id,
-        userId: r.user_id,
-        userName: r.profiles?.name || 'Usuário',
-        title: r.title,
-        description: r.description,
-        category: r.category,
-        createdAt: new Date(r.created_at).toLocaleDateString('pt-BR'),
-        upvotes: r.upvotes,
-        upvotedBy: r.upvoted_by || [],
-        answered: r.answered,
-        answeredTutorialId: r.answered_tutorial_id,
-      }))
-      setRequests(formattedRequests)
-    }
-
-    // Fetch Users
-    console.log('[refreshData] Fetching users...')
-    const { data: usersData, error: usersError } = await supabase
-      .from('profiles')
-      .select('*')
-      .order('created_at', { ascending: false })
-
-    console.log('[refreshData] Users response:', { count: usersData?.length, error: usersError })
-
-    if (usersError) {
-      if (!isProfilesPolicyRecursion(usersError as SupabaseError)) {
-        console.warn('[refreshData] User error:', usersError)
-      }
-      setUsers([])
-    } else if (usersData) {
-      console.log('[refreshData] Processing users:', usersData.length)
-      const formattedUsers: UserType[] = (usersData as SupabaseProfileRow[]).map((u) => ({
-        id: u.id,
-        email: u.email,
-        name: u.name,
-        role: u.role as "USER" | "ADMIN",
-        createdAt: new Date(u.created_at).toLocaleDateString('pt-BR'),
-        banned: Boolean(u.banned),
-      }))
-      console.log('[refreshData] Setting users:', formattedUsers.length)
-      setUsers(formattedUsers)
-    }
-    console.log('[refreshData] Finished data refresh')
-  }
-
+  // ── Dark mode ────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (darkMode) {
       document.documentElement.classList.add("dark")
@@ -511,91 +107,229 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [darkMode])
 
-  // Listen for auth events from other tabs via BroadcastChannel or localStorage fallback
+  // ── Carrega perfil do usuário a partir da sessão ──────────────────────────
+
+  const loadUserFromSession = async (session: any) => {
+    if (!session?.user) return
+
+    try {
+      const meResponse = await fetch('/api/auth/me', { credentials: 'include' })
+      let profile: { name?: string; role?: string; banned?: boolean } | null = null
+
+      if (meResponse.ok) {
+        const meJson = await meResponse.json().catch(() => null)
+        profile = meJson?.user || null
+      }
+
+      setUser({
+        id: session.user.id,
+        email: session.user.email!,
+        name: profile?.name || session.user.user_metadata?.name || session.user.email!.split('@')[0],
+        role: profile?.role === "ADMIN" ? "ADMIN" : "USER",
+        createdAt: session.user.created_at,
+        banned: Boolean(profile?.banned),
+        savedTutorials: [],
+        votedTutorials: [],
+      })
+
+      // Carrega tutoriais salvos e votados
+      const [{ data: savedData }, { data: votedData }] = await Promise.all([
+        supabase.from('saved_tutorials').select('tutorial_id').eq('user_id', session.user.id),
+        supabase.from('tutorial_votes').select('tutorial_id').eq('user_id', session.user.id),
+      ])
+
+      setUser(prev =>
+        prev
+          ? {
+              ...prev,
+              savedTutorials: savedData?.map((s: any) => s.tutorial_id) ?? [],
+              votedTutorials: votedData?.map((v: any) => v.tutorial_id) ?? [],
+            }
+          : prev
+      )
+    } catch (err) {
+      console.error('[Auth] Erro ao carregar perfil do usuário:', err)
+    }
+  }
+
+  // ── Boot: inicializa sessão + dados ──────────────────────────────────────────
+
   useEffect(() => {
-    const syncSessionState = async (payload: any) => {
-      if (!payload) {
-        setUser(null);
-        return;
-      }
-      
-      const { data: { session: currentSession } } = await supabase.auth.getSession();
-      
-      // Prevenir loop infinito verificando se o token realmente mudou
-      if (currentSession?.access_token !== payload.access_token) {
-        console.log('[Auth] Sincronizando nova sessão de outra aba');
-        const { data, error } = await supabase.auth.setSession({
-          access_token: payload.access_token,
-          refresh_token: payload.refresh_token
-        });
-        
-        if (!error && data.session?.user) {
-          await applySessionToUser(data.session);
-          await refreshData();
+    if (initializingRef.current) return
+    initializingRef.current = true
+
+    const safetyTimeout = setTimeout(() => setAuthReady(true), 8000)
+
+    const boot = async () => {
+      try {
+        // getUser() valida o token diretamente no servidor Supabase (mais seguro que getSession)
+        const { data: { user: authUser }, error } = await supabase.auth.getUser()
+
+        if (error || !authUser) {
+          // Sem sessão válida — usuário não está logado
+          console.log('[Auth] Nenhuma sessão ativa encontrada.')
+        } else {
+          // Sessão válida — carrega o perfil
+          const { data: { session } } = await supabase.auth.getSession()
+          await loadUserFromSession(session)
         }
-      }
-    };
 
-    const handleMessage = async (e: any) => {
-      if (e?.data?.type === "session") {
-        await syncSessionState(e.data.payload);
+        await refreshData()
+
+        if (authUser) {
+          await refreshDataFromServer()
+        }
+      } catch (err) {
+        console.error('[Auth] Erro durante inicialização:', err)
+      } finally {
+        clearTimeout(safetyTimeout)
+        setAuthReady(true)
       }
     }
 
-    if (authChannel) {
-      authChannel.addEventListener("message", handleMessage);
-      authChannel.onmessage = handleMessage;
-    }
+    boot()
 
-    const storageHandler = async (e: StorageEvent) => {
-      if (e.key === "auth-session-sync" && e.newValue) {
-        try {
-          const data = JSON.parse(e.newValue);
-          await syncSessionState(data.payload);
-        } catch (err) {}
-      } else if (e.key === "auth-session-persist" && e.newValue) {
-        try {
-          const payload = JSON.parse(e.newValue);
-          await syncSessionState(payload);
-        } catch (err) {}
-      } else if (e.key === "auth-session-persist" && !e.newValue) {
-        await syncSessionState(null);
+    // Listener de mudança de estado — disparado automaticamente pelo Supabase
+    // quando o token é renovado, o usuário faz login/logout em qualquer aba.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('[Auth] Evento:', event)
+
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        await loadUserFromSession(session)
+      } else if (event === 'SIGNED_OUT') {
+        setUser(null)
       }
-    };
+    })
 
-    window.addEventListener("storage", storageHandler);
     return () => {
-      if (authChannel) authChannel.removeEventListener("message", handleMessage)
-      window.removeEventListener("storage", storageHandler)
+      clearTimeout(safetyTimeout)
+      subscription.unsubscribe()
     }
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ─── Dados: tutoriais, comentários, requisições ───────────────────────────
+
+  const refreshData = async () => {
+    console.log('[Data] Carregando dados...')
+
+    // Tutoriais aprovados
+    let { data: tutorialsData, error: tutorialsError } = await supabase
+      .from('tutorials')
+      .select('*, profiles(name)')
+      .eq('approved', true)
+      .order('created_at', { ascending: false })
+
+    if ((tutorialsError as SupabaseError | null)?.code === '42P17') {
+      const fallback = await supabase.from('tutorials').select('*').order('created_at', { ascending: false })
+      tutorialsData = fallback.data
+      tutorialsError = fallback.error
+    }
+
+    if (tutorialsError && !isProfilesPolicyRecursion(tutorialsError as SupabaseError)) {
+      console.warn('[Data] Erro ao carregar tutoriais:', tutorialsError)
+      setTutorials(initialTutorials)
+    } else {
+      const formatted: Tutorial[] = ((tutorialsData || []) as SupabaseTutorialRow[]).map(t => {
+        const profile = Array.isArray(t.profiles) ? t.profiles[0] : t.profiles
+        return {
+          id: t.id,
+          title: t.title,
+          description: t.description,
+          steps: t.steps || [],
+          authorId: t.author_id,
+          authorName: profile?.name || 'Usuário',
+          category: t.category,
+          createdAt: new Date(t.created_at).toLocaleDateString('pt-BR'),
+          approved: t.approved,
+          upvotes: t.upvotes ?? 0,
+          comments: [],
+        }
+      })
+      setTutorials(formatted.length > 0 ? formatted : initialTutorials)
+    }
+
+    // Comentários
+    const { data: commentsData } = await supabase.from('comments').select('*')
+    const commentsByTutorial = (commentsData || []).reduce<Record<string, Comment[]>>((acc, c: any) => {
+      if (!acc[c.tutorial_id]) acc[c.tutorial_id] = []
+      acc[c.tutorial_id].push({
+        id: c.id,
+        tutorialId: c.tutorial_id,
+        userId: c.user_id,
+        userName: c.user_name,
+        content: c.content,
+        createdAt: new Date(c.created_at).toLocaleDateString('pt-BR'),
+      })
+      return acc
+    }, {})
+    setTutorials(prev => prev.map(t => ({ ...t, comments: commentsByTutorial[t.id] || t.comments || [] })))
+
+    // Problemas
+    const { data: problemsData, error: problemsError } = await supabase.from('tutorial_problems').select('*')
+    if (!problemsError) {
+      setProblems((problemsData || []).map((p: any) => ({
+        id: p.id, tutorialId: p.tutorial_id, userId: p.user_id, userName: p.user_name,
+        stepNumber: p.step_number, description: p.description,
+        createdAt: new Date(p.created_at).toLocaleDateString('pt-BR'), resolved: p.resolved,
+      })))
+    }
+
+    // Requisições
+    let { data: requestsData, error: requestsError } = await supabase
+      .from('tutorial_requests').select('*, profiles(name)').order('created_at', { ascending: false })
+    if ((requestsError as SupabaseError | null)?.code === '42P17') {
+      const fallback = await supabase.from('tutorial_requests').select('*').order('created_at', { ascending: false })
+      requestsData = fallback.data
+      requestsError = fallback.error
+    }
+    if (!requestsError && requestsData) {
+      setRequests(requestsData.map((r: any) => ({
+        id: r.id, userId: r.user_id,
+        userName: r.profiles?.name || 'Usuário',
+        title: r.title, description: r.description, category: r.category,
+        createdAt: new Date(r.created_at).toLocaleDateString('pt-BR'),
+        upvotes: r.upvotes, upvotedBy: r.upvoted_by || [],
+        answered: r.answered, answeredTutorialId: r.answered_tutorial_id,
+      })))
+    }
+
+    // Usuários (profiles)
+    const { data: usersData, error: usersError } = await supabase
+      .from('profiles').select('*').order('created_at', { ascending: false })
+    if (!usersError && usersData) {
+      setUsers((usersData as SupabaseProfileRow[]).map(u => ({
+        id: u.id, email: u.email, name: u.name, role: u.role as "USER" | "ADMIN",
+        createdAt: new Date(u.created_at).toLocaleDateString('pt-BR'), banned: Boolean(u.banned),
+      })))
+    }
+  }
+
+  const refreshDataFromServer = async () => {
+    try {
+      const response = await fetch('/api/admin/data')
+      const result = await response.json()
+      if (result.success) {
+        setTutorials(result.tutorials || [])
+        setUsers(result.users || [])
+        setProblems(result.problems || [])
+        setRequests(result.requests || [])
+      }
+    } catch (err) {
+      console.error('[Data] Erro ao buscar dados do servidor:', err)
+    }
+  }
+
+  // ─── Autenticação ─────────────────────────────────────────────────────────
 
   const signIn = async (email: string, password: string) => {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) {
       toast.error('Falha ao fazer login: ' + (error.message || 'Erro desconhecido'))
       return { error }
     }
-
-        // Retrieve the freshly created session after signIn
-        const { data: { session }, error: sessErr } = await supabase.auth.getSession();
-        if (sessErr || !session?.user) {
-          return { error: sessErr || new Error('Session not available') };
-        }
-        
-        // Apply session to user state
-        await applySessionToUser(session);
-        
-        // Broadcast login to other tabs (or fallback)
-        broadcastSession('login');
-        
-        // Refresh data for the logged‑in user
-        await refreshData();
-        return { error: null };
-
+    // onAuthStateChange cuida do resto (SIGNED_IN event)
+    await refreshData()
+    return { error: null }
   }
 
   const signUp = async (email: string, password: string, name: string) => {
@@ -603,9 +337,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       email,
       password,
       options: {
-        data: {
-          name,
-        },
+        data: { name },
         emailRedirectTo: `${window.location.origin}/auth/callback`,
       },
     })
@@ -614,67 +346,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const updateProfile = async (name: string) => {
     if (!user) return { error: "No user" }
-
-    // Update in Supabase
-    const { error } = await supabase
-      .from('profiles')
-      .update({ name })
-      .eq('id', user.id)
-
+    const { error } = await supabase.from('profiles').update({ name }).eq('id', user.id)
     if (!error) {
-      // Update local state
       setUser(prev => prev ? { ...prev, name } : null)
-      
-      // Update metadata (optional but good for consistency)
-      await supabase.auth.updateUser({
-        data: { name }
-      })
+      await supabase.auth.updateUser({ data: { name } })
     }
-
     return { error }
   }
 
   const logout = async () => {
     try {
-      console.log('[Auth] Logging out user')
-      const { error } = await supabase.auth.signOut()
-      
-      if (error) {
-        console.error('[Auth] Logout error from Supabase:', error)
-        // Still clear user state even if signOut fails
-      } else {
-        console.log('[Auth] Signout successful')
-      }
-      
-      // Always clear user state
-      setUser(null)
-      broadcastSession('logout');
-
+      await supabase.auth.signOut()
+      // onAuthStateChange cuida de setUser(null) via SIGNED_OUT event
     } catch (err) {
-      console.error('[Auth] Exception during logout:', err)
-      // Still clear user state even if exception
+      console.error('[Auth] Erro no logout:', err)
       setUser(null)
     }
   }
 
-  const updateTutorialInState = (tutorialId: string, updater: (tutorial: Tutorial) => Tutorial) => {
-    setTutorials((prev) => prev.map((tutorial) => (tutorial.id === tutorialId ? updater(tutorial) : tutorial)))
+  // ─── Ações de tutorial ────────────────────────────────────────────────────
+
+  const updateTutorialInState = (tutorialId: string, updater: (t: Tutorial) => Tutorial) => {
+    setTutorials(prev => prev.map(t => t.id === tutorialId ? updater(t) : t))
   }
 
   const approveTutorial = async (tutorialId: string) => {
     try {
       const res = await fetch('/api/admin/tutorials/approve', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: tutorialId }),
       })
-
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}))
-        throw new Error(json?.error || 'Erro ao aprovar tutorial')
-      }
-
-      updateTutorialInState(tutorialId, (tutorial) => ({ ...tutorial, approved: true }))
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Erro ao aprovar tutorial')
+      updateTutorialInState(tutorialId, t => ({ ...t, approved: true }))
       toast.success('Tutorial aprovado.')
     } catch (error: any) {
       logError('approveTutorial', error, { tutorialId })
@@ -686,17 +389,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const deleteTutorial = async (tutorialId: string) => {
     try {
       const res = await fetch('/api/admin/tutorials/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: tutorialId }),
       })
-
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}))
-        throw new Error(json?.error || 'Erro ao excluir tutorial')
-      }
-
-      setTutorials((prev) => prev.filter((tutorial) => tutorial.id !== tutorialId))
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Erro ao excluir tutorial')
+      setTutorials(prev => prev.filter(t => t.id !== tutorialId))
       toast.success('Tutorial excluído.')
     } catch (error: any) {
       logError('deleteTutorial', error, { tutorialId })
@@ -706,174 +403,85 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const incrementTutorialUpvotes = async (tutorialId: string) => {
-    if (!user) {
-      toast.error('Você precisa estar logado para votar.')
-      return
-    }
-
-    const currentTutorial = tutorials.find((tutorial) => tutorial.id === tutorialId)
-    if (!currentTutorial) {
-      return
-    }
-
+    if (!user) { toast.error('Você precisa estar logado para votar.'); return }
+    const current = tutorials.find(t => t.id === tutorialId)
+    if (!current) return
     const hasVoted = user.votedTutorials?.includes(tutorialId)
-    const nextUpvotes = hasVoted ? currentTutorial.upvotes - 1 : currentTutorial.upvotes + 1
-    const nextVotedTutorials = hasVoted
-      ? user.votedTutorials?.filter((id) => id !== tutorialId) ?? []
+    const nextUpvotes = hasVoted ? current.upvotes - 1 : current.upvotes + 1
+    const nextVoted = hasVoted
+      ? user.votedTutorials?.filter(id => id !== tutorialId) ?? []
       : [...(user.votedTutorials || []), tutorialId]
-
-    updateTutorialInState(tutorialId, (tutorial) => ({ ...tutorial, upvotes: nextUpvotes }))
-    setUser({ ...user, votedTutorials: nextVotedTutorials })
-
+    updateTutorialInState(tutorialId, t => ({ ...t, upvotes: nextUpvotes }))
+    setUser({ ...user, votedTutorials: nextVoted })
     try {
       if (hasVoted) {
-        const { error } = await supabase
-          .from('tutorial_votes')
-          .delete()
-          .eq('user_id', user.id)
-          .eq('tutorial_id', tutorialId)
-
-        if (error) throw error
-        const { error: updateError } = await supabase
-          .from('tutorials')
-          .update({ upvotes: nextUpvotes })
-          .eq('id', tutorialId)
-
-        if (updateError) throw updateError
+        const { error: e1 } = await supabase.from('tutorial_votes').delete().eq('user_id', user.id).eq('tutorial_id', tutorialId)
+        if (e1) throw e1
       } else {
-        const { error } = await supabase
-          .from('tutorial_votes')
-          .insert({ user_id: user.id, tutorial_id: tutorialId })
-
-        if (error) throw error
-        const { error: updateError } = await supabase
-          .from('tutorials')
-          .update({ upvotes: nextUpvotes })
-          .eq('id', tutorialId)
-
-        if (updateError) throw updateError
+        const { error: e1 } = await supabase.from('tutorial_votes').insert({ user_id: user.id, tutorial_id: tutorialId })
+        if (e1) throw e1
       }
-    } catch (error) {
-      updateTutorialInState(tutorialId, (tutorial) => ({ ...tutorial, upvotes: currentTutorial.upvotes }))
+      const { error: e2 } = await supabase.from('tutorials').update({ upvotes: nextUpvotes }).eq('id', tutorialId)
+      if (e2) throw e2
+    } catch {
+      updateTutorialInState(tutorialId, t => ({ ...t, upvotes: current.upvotes }))
       setUser({ ...user, votedTutorials: user.votedTutorials || [] })
       toast.error('Não foi possível registrar o voto.')
-      throw error
     }
   }
 
   const toggleSaveTutorial = async (tutorialId: string) => {
-    if (!user) {
-      toast.error("Você precisa estar logado para salvar tutoriais.")
-      return
-    }
-
+    if (!user) { toast.error("Você precisa estar logado para salvar tutoriais."); return }
     const isSaved = user.savedTutorials?.includes(tutorialId)
-    let newSavedTutorials = user.savedTutorials || []
-
-    console.log(`[toggleSaveTutorial] Tutorial: ${tutorialId}, User: ${user.id}, Currently Saved: ${isSaved}`)
-
-    // Otimistic Update (Atualiza a tela antes do banco responder)
-    if (isSaved) {
-      newSavedTutorials = newSavedTutorials.filter(id => id !== tutorialId)
-    } else {
-      newSavedTutorials = [...newSavedTutorials, tutorialId]
-    }
-    setUser({ ...user, savedTutorials: newSavedTutorials })
-
+    const nextSaved = isSaved
+      ? (user.savedTutorials || []).filter(id => id !== tutorialId)
+      : [...(user.savedTutorials || []), tutorialId]
+    setUser({ ...user, savedTutorials: nextSaved })
     try {
       if (isSaved) {
-        // Unsave
-        console.log("[toggleSaveTutorial] Removing from DB...")
-        const { error } = await supabase
-          .from('saved_tutorials')
-          .delete()
-          .eq('user_id', user.id)
-          .eq('tutorial_id', tutorialId)
-        
-        if (error) {
-          console.error("[toggleSaveTutorial] Delete Error:", error)
-          throw error
-        }
-        console.log("[toggleSaveTutorial] Removed successfully")
+        const { error } = await supabase.from('saved_tutorials').delete().eq('user_id', user.id).eq('tutorial_id', tutorialId)
+        if (error) throw error
         toast.success("Tutorial removido dos salvos.")
       } else {
-        // Save
-        console.log("[toggleSaveTutorial] Adding to DB...")
-        const { error } = await supabase
-          .from('saved_tutorials')
-          .insert({ user_id: user.id, tutorial_id: tutorialId })
-        
-        if (error) {
-          logError('toggleSaveTutorial:insert', error, { tutorialId, action: 'insert' })
-          throw error
-        }
-        console.log("[toggleSaveTutorial] Added successfully")
+        const { error } = await supabase.from('saved_tutorials').insert({ user_id: user.id, tutorial_id: tutorialId })
+        if (error) throw error
         toast.success("Tutorial salvo com sucesso!")
       }
     } catch (error: any) {
-      logError('toggleSaveTutorial', error, { tutorialId, save })
+      logError('toggleSaveTutorial', error, { tutorialId })
       toast.error('Não foi possível atualizar sua lista de salvos. Tente novamente.')
-      // Reverte se der erro
       setUser(prev => prev ? { ...prev, savedTutorials: user.savedTutorials } : null)
     }
   }
 
+  // ─── Admin logs ────────────────────────────────────────────────────────────
+
   const addAdminLog = (log: Omit<AdminLog, "id" | "createdAt">) => {
-    const newLog: AdminLog = {
-      ...log,
-      id: Date.now().toString(),
-      createdAt: new Date().toLocaleString("pt-BR"),
-    }
-    setAdminLogs((prev) => [newLog, ...prev])
+    setAdminLogs(prev => [{ ...log, id: Date.now().toString(), createdAt: new Date().toLocaleString("pt-BR") }, ...prev])
   }
 
+  // ─── Comentários ──────────────────────────────────────────────────────────
+
   const addCommentToTutorial = (tutorialId: string, comment: Comment) => {
-    setTutorials((prev) =>
-      prev.map((t) => {
-        if (t.id === tutorialId) {
-          return {
-            ...t,
-            comments: [...(t.comments || []), comment],
-          }
-        }
-        return t
-      }),
-    )
+    setTutorials(prev => prev.map(t => t.id === tutorialId ? { ...t, comments: [...(t.comments || []), comment] } : t))
   }
 
   const createComment = async (tutorialId: string, content: string) => {
-    if (!user) {
-      toast.error('Você precisa estar logado para comentar.')
-      return
-    }
+    if (!user) { toast.error('Você precisa estar logado para comentar.'); return }
     try {
       const res = await fetch('/api/comments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tutorialId, content }),
-        credentials: 'include',
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tutorialId, content }), credentials: 'include',
       })
-
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}))
-        throw new Error(json?.error || 'Erro ao postar comentário')
-      }
-
-      const json = await res.json()
-      const data = json.comment
-
-      const newComment: Comment = {
-        id: data.id,
-        tutorialId: data.tutorial_id,
-        userId: data.user_id,
-        userName: data.user_name,
-        content: data.content,
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Erro ao postar comentário')
+      const { comment: data } = await res.json()
+      addCommentToTutorial(tutorialId, {
+        id: data.id, tutorialId: data.tutorial_id, userId: data.user_id,
+        userName: data.user_name, content: data.content,
         createdAt: new Date(data.created_at).toLocaleDateString('pt-BR'),
-      }
-
-      addCommentToTutorial(tutorialId, newComment)
+      })
     } catch (error: any) {
-      logError('createComment', error, { tutorialId, userName: user.name })
+      logError('createComment', error, { tutorialId })
       toast.error('Não foi possível postar o comentário.')
     }
   }
@@ -881,28 +489,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const deleteComment = async (tutorialId: string, commentId: string) => {
     try {
       const res = await fetch('/api/comments/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tutorialId, commentId }),
-        credentials: 'include',
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tutorialId, commentId }), credentials: 'include',
       })
-
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}))
-        throw new Error(json?.error || 'Erro ao deletar comentário')
-      }
-
-      setTutorials((prev) =>
-        prev.map((t) => {
-          if (t.id === tutorialId && t.comments) {
-            return {
-              ...t,
-              comments: t.comments.filter((c) => c.id !== commentId),
-            }
-          }
-          return t
-        }),
-      )
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Erro ao deletar comentário')
+      setTutorials(prev => prev.map(t => t.id === tutorialId ? { ...t, comments: (t.comments || []).filter(c => c.id !== commentId) } : t))
     } catch (error: any) {
       logError('deleteComment', error, { commentId, tutorialId })
       toast.error('Não foi possível deletar o comentário.')
@@ -910,45 +501,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const editComment = async (tutorialId: string, commentId: string, content: string) => {
-    if (!user) {
-      toast.error('Você precisa estar logado para editar comentários.')
-      return
-    }
-
+    if (!user) { toast.error('Você precisa estar logado para editar comentários.'); return }
     try {
       const res = await fetch('/api/comments/edit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tutorialId, commentId, content }),
-        credentials: 'include',
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tutorialId, commentId, content }), credentials: 'include',
       })
-
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}))
-        throw new Error(json?.error || 'Erro ao editar comentário')
-      }
-
-      const json = await res.json()
-      const data = json.comment
-
-      setTutorials((prev) =>
-        prev.map((t) => {
-          if (t.id === tutorialId && t.comments) {
-            return {
-              ...t,
-              comments: t.comments.map((c) => {
-                if (c.id === commentId) {
-                  const createdAt = data.created_at ? new Date(data.created_at).toLocaleDateString('pt-BR') : c.createdAt
-                  return { ...c, content: data.content, createdAt }
-                }
-                return c
-              }),
-            }
-          }
-          return t
-        }),
-      )
-
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Erro ao editar comentário')
+      const { comment: data } = await res.json()
+      setTutorials(prev => prev.map(t => t.id === tutorialId
+        ? { ...t, comments: (t.comments || []).map(c => c.id === commentId ? { ...c, content: data.content, createdAt: data.created_at ? new Date(data.created_at).toLocaleDateString('pt-BR') : c.createdAt } : c) }
+        : t
+      ))
       toast.success('Comentário atualizado.')
     } catch (error: any) {
       logError('editComment', error, { tutorialId, commentId })
@@ -956,75 +520,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  // ─── Problemas ────────────────────────────────────────────────────────────
+
   const reportProblem = async (problem: Omit<TutorialProblem, "id" | "createdAt" | "resolved">) => {
-    if (!user) {
-      toast.error('Você precisa estar logado para relatar um problema.')
-      return
-    }
-
-    const { data, error } = await supabase
-      .from('tutorial_problems')
-      .insert({
-        tutorial_id: problem.tutorialId,
-        user_id: problem.userId,
-        user_name: problem.userName,
-        step_number: problem.stepNumber,
-        description: problem.description,
-        resolved: false,
-      })
-      .select('*')
-      .single()
-
-    if (error || !data) {
-      logError('reportProblem', error, { tutorialId, stepNumber, userId: user?.id })
-      toast.error('Não foi possível relatar o problema. Tente novamente.')
-      return
-    }
-
-    setProblems((prev) => [
-      ...prev,
-      {
-        id: data.id,
-        tutorialId: data.tutorial_id,
-        userId: data.user_id,
-        userName: data.user_name,
-        stepNumber: data.step_number,
-        description: data.description,
-        createdAt: new Date(data.created_at).toLocaleDateString('pt-BR'),
-        resolved: data.resolved,
-      },
-    ])
+    if (!user) { toast.error('Você precisa estar logado para relatar um problema.'); return }
+    const { data, error } = await supabase.from('tutorial_problems').insert({
+      tutorial_id: problem.tutorialId, user_id: problem.userId, user_name: problem.userName,
+      step_number: problem.stepNumber, description: problem.description, resolved: false,
+    }).select('*').single()
+    if (error || !data) { toast.error('Não foi possível relatar o problema. Tente novamente.'); return }
+    setProblems(prev => [...prev, {
+      id: data.id, tutorialId: data.tutorial_id, userId: data.user_id, userName: data.user_name,
+      stepNumber: data.step_number, description: data.description,
+      createdAt: new Date(data.created_at).toLocaleDateString('pt-BR'), resolved: data.resolved,
+    }])
   }
 
   const resolveProblem = async (problemId: string) => {
-    const { error } = await supabase
-      .from('tutorial_problems')
-      .update({ resolved: true })
-      .eq('id', problemId)
-
-    if (error) {
-      logError('resolveProblem', error, { problemId })
-      toast.error('Não foi possível resolver o problema.')
-      return
-    }
-
-    setProblems((prev) => prev.map((p) => (p.id === problemId ? { ...p, resolved: true } : p)))
+    const { error } = await supabase.from('tutorial_problems').update({ resolved: true }).eq('id', problemId)
+    if (error) { toast.error('Não foi possível resolver o problema.'); return }
+    setProblems(prev => prev.map(p => p.id === problemId ? { ...p, resolved: true } : p))
   }
 
   const deleteProblem = async (problemId: string) => {
     try {
       const res = await fetch('/api/admin/problems/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: problemId }),
       })
-
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}))
-        throw new Error(json?.error || 'Erro ao excluir problema')
-      }
-
-      setProblems((prev) => prev.filter((p) => p.id !== problemId))
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Erro ao excluir problema')
+      setProblems(prev => prev.filter(p => p.id !== problemId))
       toast.success('Problema excluído.')
     } catch (error: any) {
       logError('deleteProblem', error, { problemId })
@@ -1032,20 +557,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  // ─── Requisições ──────────────────────────────────────────────────────────
+
   const deleteRequest = async (requestId: string) => {
     try {
       const res = await fetch('/api/admin/requests/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: requestId }),
       })
-
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}))
-        throw new Error(json?.error || 'Erro ao excluir requisição')
-      }
-
-      setRequests((prev) => prev.filter((request) => request.id !== requestId))
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Erro ao excluir requisição')
+      setRequests(prev => prev.filter(r => r.id !== requestId))
       toast.success('Requisição excluída.')
     } catch (error: any) {
       logError('deleteRequest', error, { requestId })
@@ -1053,152 +574,64 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const banUser = async (userId: string) => {
+  // ─── Ações de admin sobre usuários ───────────────────────────────────────
+
+  const adminUserAction = async (url: string, body: object, onSuccess: () => void, errorMsg: string) => {
     try {
-      const res = await fetch('/api/admin/users/ban', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: userId, ban: true }),
-      })
-
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}))
-        throw new Error(json?.error || 'Erro ao banir usuário')
-      }
-
-      setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, banned: true } : u)))
-      toast.success('Usuário banido.')
+      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || errorMsg)
+      onSuccess()
     } catch (error: any) {
-      logError('banUser', error, { userId })
-      toast.error(getUserFriendlyErrorMessage(error) || 'Não foi possível banir o usuário.')
+      toast.error(getUserFriendlyErrorMessage(error) || errorMsg)
     }
   }
 
-  const unbanUser = async (userId: string) => {
-    try {
-      const res = await fetch('/api/admin/users/ban', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: userId, ban: false }),
-      })
+  const banUser = (userId: string) => adminUserAction(
+    '/api/admin/users/ban', { id: userId, ban: true },
+    () => { setUsers(prev => prev.map(u => u.id === userId ? { ...u, banned: true } : u)); toast.success('Usuário banido.') },
+    'Não foi possível banir o usuário.'
+  )
 
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}))
-        throw new Error(json?.error || 'Erro ao desbanir usuário')
-      }
+  const unbanUser = (userId: string) => adminUserAction(
+    '/api/admin/users/ban', { id: userId, ban: false },
+    () => { setUsers(prev => prev.map(u => u.id === userId ? { ...u, banned: false } : u)); toast.success('Usuário desbanido.') },
+    'Não foi possível desbanir o usuário.'
+  )
 
-      setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, banned: false } : u)))
-      toast.success('Usuário desbanido.')
-    } catch (error: any) {
-      logError('unbanUser', error, { userId })
-      toast.error(getUserFriendlyErrorMessage(error) || 'Não foi possível desbanir o usuário.')
-    }
-  }
+  const promoteToAdmin = (userId: string) => adminUserAction(
+    '/api/admin/users/promote', { id: userId },
+    () => { setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: 'ADMIN' as const } : u)); toast.success('Usuário promovido a admin.') },
+    'Não foi possível promover o usuário.'
+  )
 
-  const promoteToAdmin = async (userId: string) => {
-    try {
-      const res = await fetch('/api/admin/users/promote', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: userId }),
-      })
+  const demoteFromAdmin = (userId: string) => adminUserAction(
+    '/api/admin/users/demote', { id: userId },
+    () => { setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: 'USER' as const } : u)); toast.success('Usuário rebaixado de admin.') },
+    'Não foi possível rebaixar o usuário.'
+  )
 
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}))
-        throw new Error(json?.error || 'Erro ao promover usuário')
-      }
+  const deleteUser = async (userId: string) => adminUserAction(
+    '/api/admin/users/delete', { id: userId },
+    () => { setUsers(prev => prev.filter(u => u.id !== userId)); toast.success('Usuário excluído.') },
+    'Não foi possível excluir o usuário.'
+  )
 
-      setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, role: 'ADMIN' as const } : u)))
-      toast.success('Usuário promovido a admin.')
-    } catch (error: any) {
-      logError('promoteToAdmin', error, { userId })
-      toast.error(getUserFriendlyErrorMessage(error) || 'Não foi possível promover o usuário.')
-    }
-  }
-
-  const demoteFromAdmin = async (userId: string) => {
-    try {
-      const res = await fetch('/api/admin/users/demote', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: userId }),
-      })
-
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}))
-        throw new Error(json?.error || 'Erro ao rebaixar usuário')
-      }
-
-      setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, role: 'USER' as const } : u)))
-      toast.success('Usuário rebaixado de admin.')
-    } catch (error: any) {
-      logError('demoteFromAdmin', error, { userId })
-      toast.error(getUserFriendlyErrorMessage(error) || 'Não foi possível rebaixar o usuário.')
-    }
-  }
-
-  const deleteUser = async (userId: string) => {
-    try {
-      const res = await fetch('/api/admin/users/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: userId }),
-      })
-
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}))
-        throw new Error(json?.error || 'Erro ao excluir usuário')
-      }
-
-      setUsers((prev) => prev.filter((u) => u.id !== userId))
-      toast.success('Usuário excluído.')
-    } catch (error: any) {
-      logError('deleteUser', error, { userId })
-      toast.error(getUserFriendlyErrorMessage(error) || 'Não foi possível excluir o usuário.')
-    }
-  }
+  // ─── Provider value ───────────────────────────────────────────────────────
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        authReady,
-        signIn,
-        signUp,
-        updateProfile,
-        logout,
-        toggleSaveTutorial,
-        darkMode,
-        setDarkMode,
-        tutorials,
-        setTutorials,
-        problems,
-        setProblems,
-        requests,
-        setRequests,
-        users,
-        setUsers,
-        adminLogs,
-        addAdminLog,
-        createComment,
-        editComment,
-        deleteComment,
-        reportProblem,
-        banUser,
-        unbanUser,
-        promoteToAdmin,
-        demoteFromAdmin,
-        deleteUser,
-        approveTutorial,
-        deleteTutorial,
-        incrementTutorialUpvotes,
-        resolveProblem,
-        deleteProblem,
-        deleteRequest,
-        refreshData,
-        refreshDataFromServer,
-      }}
-    >
+    <AuthContext.Provider value={{
+      user, authReady, signIn, signUp, updateProfile, logout,
+      darkMode, setDarkMode,
+      tutorials, setTutorials, problems, setProblems,
+      requests, setRequests, users, setUsers,
+      adminLogs, addAdminLog,
+      createComment, deleteComment, editComment,
+      reportProblem, resolveProblem, deleteProblem,
+      deleteRequest,
+      banUser, unbanUser, promoteToAdmin, demoteFromAdmin, deleteUser,
+      approveTutorial, deleteTutorial, incrementTutorialUpvotes,
+      toggleSaveTutorial, refreshData, refreshDataFromServer,
+    }}>
       {children}
     </AuthContext.Provider>
   )
