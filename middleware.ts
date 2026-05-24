@@ -3,8 +3,10 @@ import { updateSession } from '@/lib/supabase/middleware'
 
 /**
  * Middleware de Autenticação
- * Valida sessão do Supabase e protege rotas
- * 
+ * IMPORTANTE: deve rodar em TODAS as rotas para que o @supabase/ssr
+ * consiga renovar o cookie de sessão a cada requisição.
+ * Sem isso, abrir uma nova aba não recupera o estado de login.
+ *
  * Rotas protegidas:
  * - /admin/* (apenas ADMIN)
  * - /criar (apenas autenticado)
@@ -12,18 +14,16 @@ import { updateSession } from '@/lib/supabase/middleware'
  * - /salvos (apenas autenticado)
  */
 export async function middleware(request: NextRequest) {
-  // Atualiza a sessão do Supabase
   return await updateSession(request)
 }
 
-// Configurar quais rotas o middleware deve executar
 export const config = {
   matcher: [
-    // Protege rotas de admin
-    '/admin/:path*',
-    // Protege rotas de usuário logado
-    '/criar',
-    '/perfil',
-    '/salvos',
+    /*
+     * Roda em todas as rotas exceto:
+     * - arquivos estáticos (_next/static, _next/image, favicon, etc)
+     * - chamadas de API internas do Next.js
+     */
+    '/((?!_next/static|_next/image|favicon.ico|.*\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }
