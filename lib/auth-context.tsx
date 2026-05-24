@@ -290,88 +290,68 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshData = async () => {
     console.log('[Data] Carregando dados...')
 
-    // Tutoriais aprovados
-    let { data: tutorialsData, error: tutorialsError } = await supabase
-      .from('tutorials')
-      .select('*, profiles(name)')
-      .eq('approved', true)
-      .order('created_at', { ascending: false })
+    try {
+      const response = await fetch('/api/public/data')
+      const result = await response.json()
+      
+      if (result.success) {
+        // Formatar tutoriais
+        const formattedTutorials: Tutorial[] = (result.tutorials || []).map((t: any) => {
+          const profile = Array.isArray(t.profiles) ? t.profiles[0] : t.profiles
+          return {
+            id: t.id,
+            title: t.title,
+            description: t.description,
+            steps: t.steps || [],
+            authorId: t.author_id,
+            authorName: profile?.name || 'Usuário',
+            category: t.category,
+            createdAt: new Date(t.created_at).toLocaleDateString('pt-BR'),
+            approved: t.approved,
+            upvotes: t.upvotes ?? 0,
+            comments: [],
+          }
+        })
+        
+        // Agrupar comentários
+        const commentsByTutorial = (result.comments || []).reduce<Record<string, Comment[]>>((acc: any, c: any) => {
+          if (!acc[c.tutorial_id]) acc[c.tutorial_id] = []
+          acc[c.tutorial_id].push({
+            id: c.id,
+            tutorialId: c.tutorial_id,
+            userId: c.user_id,
+            userName: c.user_name,
+            content: c.content,
+            createdAt: new Date(c.created_at).toLocaleDateString('pt-BR'),
+          })
+          return acc
+        }, {})
+        
+        setTutorials(formattedTutorials.map(t => ({ ...t, comments: commentsByTutorial[t.id] || [] })))
 
-    if ((tutorialsError as SupabaseError | null)?.code === '42P17') {
-      const fallback = await supabase.from('tutorials').select('*').order('created_at', { ascending: false })
-      tutorialsData = fallback.data
-      tutorialsError = fallback.error
-    }
+        // Formatar problemas
+        setProblems((result.problems || []).map((p: any) => ({
+          id: p.id, tutorialId: p.tutorial_id, userId: p.user_id, userName: p.user_name,
+          stepNumber: p.step_number, description: p.description,
+          createdAt: new Date(p.created_at).toLocaleDateString('pt-BR'), resolved: p.resolved,
+        })))
 
-    if (tutorialsError && !isProfilesPolicyRecursion(tutorialsError as SupabaseError)) {
-      console.warn('[Data] Erro ao carregar tutoriais:', tutorialsError)
+        // Formatar requisições
+        setRequests((result.requests || []).map((r: any) => ({
+          id: r.id, userId: r.user_id,
+          userName: r.profiles?.name || 'Usuário',
+          title: r.title, description: r.description, category: r.category,
+          createdAt: new Date(r.created_at).toLocaleDateString('pt-BR'),
+          upvotes: r.upvotes, upvotedBy: r.upvoted_by || [],
+          answered: r.answered, answeredTutorialId: r.answered_tutorial_id,
+        })))
+      }
+    } catch (err) {
+      console.error('[Data] Erro ao carregar dados públicos:', err)
       setTutorials(initialTutorials)
-    } else {
-      const formatted: Tutorial[] = ((tutorialsData || []) as SupabaseTutorialRow[]).map(t => {
-        const profile = Array.isArray(t.profiles) ? t.profiles[0] : t.profiles
-        return {
-          id: t.id,
-          title: t.title,
-          description: t.description,
-          steps: t.steps || [],
-          authorId: t.author_id,
-          authorName: profile?.name || 'Usuário',
-          category: t.category,
-          createdAt: new Date(t.created_at).toLocaleDateString('pt-BR'),
-          approved: t.approved,
-          upvotes: t.upvotes ?? 0,
-          comments: [],
-        }
-      })
-      setTutorials(formatted.length > 0 ? formatted : initialTutorials)
     }
 
-    // Comentários
-    const { data: commentsData } = await supabase.from('comments').select('*')
-    const commentsByTutorial = (commentsData || []).reduce<Record<string, Comment[]>>((acc, c: any) => {
-      if (!acc[c.tutorial_id]) acc[c.tutorial_id] = []
-      acc[c.tutorial_id].push({
-        id: c.id,
-        tutorialId: c.tutorial_id,
-        userId: c.user_id,
-        userName: c.user_name,
-        content: c.content,
-        createdAt: new Date(c.created_at).toLocaleDateString('pt-BR'),
-      })
-      return acc
-    }, {})
-    setTutorials(prev => prev.map(t => ({ ...t, comments: commentsByTutorial[t.id] || t.comments || [] })))
-
-    // Problemas
-    const { data: problemsData, error: problemsError } = await supabase.from('tutorial_problems').select('*')
-    if (!problemsError) {
-      setProblems((problemsData || []).map((p: any) => ({
-        id: p.id, tutorialId: p.tutorial_id, userId: p.user_id, userName: p.user_name,
-        stepNumber: p.step_number, description: p.description,
-        createdAt: new Date(p.created_at).toLocaleDateString('pt-BR'), resolved: p.resolved,
-      })))
-    }
-
-    // Requisições
-    let { data: requestsData, error: requestsError } = await supabase
-      .from('tutorial_requests').select('*, profiles(name)').order('created_at', { ascending: false })
-    if ((requestsError as SupabaseError | null)?.code === '42P17') {
-      const fallback = await supabase.from('tutorial_requests').select('*').order('created_at', { ascending: false })
-      requestsData = fallback.data
-      requestsError = fallback.error
-    }
-    if (!requestsError && requestsData) {
-      setRequests(requestsData.map((r: any) => ({
-        id: r.id, userId: r.user_id,
-        userName: r.profiles?.name || 'Usuário',
-        title: r.title, description: r.description, category: r.category,
-        createdAt: new Date(r.created_at).toLocaleDateString('pt-BR'),
-        upvotes: r.upvotes, upvotedBy: r.upvoted_by || [],
-        answered: r.answered, answeredTutorialId: r.answered_tutorial_id,
-      })))
-    }
-
-    // Usuários (profiles)
+    // Usuários (profiles) - Somente admins precisam ver isso, mas tenta buscar
     const { data: usersData, error: usersError } = await supabase
       .from('profiles').select('*').order('created_at', { ascending: false })
     if (!usersError && usersData) {
