@@ -80,12 +80,12 @@ interface AuthContextType {
 // ─── Inicialização do cliente (singleton) ────────────────────────────────────
 
 validateSupabaseConfig()
-const supabase = createClient()
 const AuthContext = createContext<AuthContextType | null>(null)
 
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const [supabase] = useState(() => createClient())
   const [user, setUser] = useState<UserType | null>(null)
   const [authReady, setAuthReady] = useState(false)
   const [darkMode, setDarkMode] = useState(true)
@@ -111,6 +111,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loadUserFromSession = async (session: any) => {
     if (!session?.user) return
+
+    // Optimistic Update: Set user instantly so UI doesn't wait for /api/auth/me
+    setUser(prev => prev || {
+      id: session.user.id,
+      email: session.user.email!,
+      name: session.user.user_metadata?.name || session.user.email!.split('@')[0],
+      role: "USER",
+      createdAt: session.user.created_at,
+      banned: false,
+      savedTutorials: [],
+      votedTutorials: [],
+    })
 
     try {
       const meResponse = await fetch('/api/auth/me', { credentials: 'include' })
@@ -249,7 +261,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         window.removeEventListener('storage', handleStorageChange);
       }
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [supabase]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Dados: tutoriais, comentários, requisições ───────────────────────────
 
