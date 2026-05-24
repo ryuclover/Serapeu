@@ -162,6 +162,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const boot = async () => {
       try {
+        // Fallback robusto: Tenta ler do localStorage primeiro
+        const persisted = typeof window !== 'undefined' ? localStorage.getItem('supabase-auth-token') : null;
+        if (persisted) {
+          try {
+            const parsed = JSON.parse(persisted);
+            if (parsed?.access_token) {
+              const { error } = await supabase.auth.setSession({
+                access_token: parsed.access_token,
+                refresh_token: parsed.refresh_token
+              });
+              if (error) {
+                  console.warn('[Auth] Falha ao restaurar sessão do localStorage:', error);
+                  localStorage.removeItem('supabase-auth-token');
+              }
+            }
+          } catch (e) {
+             console.warn('[Auth] Falha ao parsear token do localStorage:', e);
+             localStorage.removeItem('supabase-auth-token');
+          }
+        }
+
         await refreshData()
       } catch (err) {
         console.error('[Auth] Erro durante inicialização:', err)
@@ -173,29 +194,60 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     boot()
 
-    // Listener de mudança de estado — disparado automaticamente pelo Supabase.
-    // INITIAL_SESSION: disparado ao abrir uma nova aba com sessão existente nos cookies.
-    // SIGNED_IN: disparado ao fazer login.
-    // TOKEN_REFRESHED: disparado ao renovar o token automaticamente.
-    // SIGNED_OUT: disparado ao fazer logout.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('[Auth] Evento:', event, session?.user?.id ?? 'sem usuário')
 
       if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         if (session?.user) {
+          // Salva no localStorage para persistência cross-tab robusta
+          if (typeof window !== 'undefined') {
+              localStorage.setItem('supabase-auth-token', JSON.stringify({
+                  access_token: session.access_token,
+                  refresh_token: session.refresh_token,
+              }));
+          }
           await loadUserFromSession(session)
           if (event !== 'TOKEN_REFRESHED') {
             await refreshData()
           }
         }
       } else if (event === 'SIGNED_OUT') {
+        if (typeof window !== 'undefined') {
+             localStorage.removeItem('supabase-auth-token');
+        }
         setUser(null)
       }
     })
 
+    // Sincroniza abas instantaneamente quando há login/logout em outra aba
+    const handleStorageChange = async (e: StorageEvent) => {
+      if (e.key === 'supabase-auth-token') {
+        if (e.newValue) {
+          try {
+            const parsed = JSON.parse(e.newValue);
+            if (parsed?.access_token) {
+              await supabase.auth.setSession({
+                access_token: parsed.access_token,
+                refresh_token: parsed.refresh_token
+              });
+            }
+          } catch (err) {}
+        } else {
+          await supabase.auth.signOut();
+        }
+      }
+    };
+    
+    if (typeof window !== 'undefined') {
+      window.addEventListener('storage', handleStorageChange);
+    }
+
     return () => {
       clearTimeout(safetyTimeout)
       subscription.unsubscribe()
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('storage', handleStorageChange);
+      }
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
