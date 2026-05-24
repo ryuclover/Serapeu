@@ -199,11 +199,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               if (error) {
                   console.warn('[Auth] Falha ao restaurar sessão do localStorage:', error);
                   localStorage.removeItem('supabase-auth-token');
+                  localStorage.removeItem('serapeu-user-cache');
+                  setUser(null);
               }
             }
           } catch (e) {
              console.warn('[Auth] Falha ao parsear token do localStorage:', e);
              localStorage.removeItem('supabase-auth-token');
+             localStorage.removeItem('serapeu-user-cache');
+             setUser(null);
           }
         }
 
@@ -234,6 +238,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (event !== 'TOKEN_REFRESHED') {
             await refreshData()
           }
+        } else if (event === 'INITIAL_SESSION') {
+          // Se INITIAL_SESSION disparar e não houver usuário, o token expirou ou não existe.
+          // Devemos limpar o cache agressivo para evitar o visual de "falso logado".
+          if (typeof window !== 'undefined') {
+              localStorage.removeItem('supabase-auth-token');
+              localStorage.removeItem('serapeu-user-cache');
+          }
+          setUser(null);
         }
       } else if (event === 'SIGNED_OUT') {
         if (typeof window !== 'undefined') {
