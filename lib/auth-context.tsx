@@ -6,24 +6,13 @@ import { createContext, useContext, useState, useEffect, type ReactNode } from "
 const SESSION_CHANNEL = "auth-session"
 const authChannel = typeof window !== "undefined" && typeof BroadcastChannel !== "undefined" ? new BroadcastChannel(SESSION_CHANNEL) : null
 // Helper to broadcast session changes with fallback to localStorage
-function broadcastSession(session) {
-  const payload = session ? {
-    access_token: session.access_token,
-    refresh_token: session.refresh_token,
-    user: session.user
-  } : null;
-
+function broadcastSession(event: 'login' | 'logout') {
   if (authChannel) {
-    authChannel.postMessage({ type: "session", payload })
+    authChannel.postMessage({ type: "session", event })
   }
   
   try {
-    localStorage.setItem("auth-session-sync", JSON.stringify({ payload, ts: Date.now() }));
-    if (payload) {
-      localStorage.setItem("auth-session-persist", JSON.stringify(payload));
-    } else {
-      localStorage.removeItem("auth-session-persist");
-    }
+    localStorage.setItem("auth-session-sync", JSON.stringify({ event, ts: Date.now() }));
   } catch (e) {
     console.warn('[Auth] Failed to use localStorage for session sync', e);
   }
@@ -210,36 +199,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const boot = async () => {
       try {
-        let activeSession = null;
+        const { data: { session }, error } = await supabase.auth.getSession();
         
-        // 1. Tentar ler do localStorage (cross-tab persist)
-        const persisted = typeof window !== 'undefined' ? localStorage.getItem('auth-session-persist') : null;
-        if (persisted) {
-          try {
-            const parsed = JSON.parse(persisted);
-            if (parsed?.access_token) {
-              const { data, error } = await supabase.auth.setSession({
-                access_token: parsed.access_token,
-                refresh_token: parsed.refresh_token
-              });
-              if (!error && data.session) activeSession = data.session;
-            }
-          } catch (e) { console.warn('[Auth] Falha ao parsear persist:', e); }
+        if (error) {
+          console.error('[Auth] Failed to get initial session:', error);
         }
 
-        // 2. Fallback para getSession padrão
-        if (!activeSession) {
-          const { data: { session }, error } = await supabase.auth.getSession();
-          if (!error && session) activeSession = session;
-        }
-
-        if (activeSession?.user) {
-          await applySessionToUser(activeSession);
+        if (session?.user) {
+          await applySessionToUser(session);
         }
 
         await refreshData(); // Load data for normal users (RLS)
         
-        if (activeSession?.user) {
+        if (session?.user) {
           await refreshDataFromServer();
         }
       } catch (err) {
@@ -258,11 +230,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (session?.user) {
         await applySessionToUser(session)
-        broadcastSession(session)
+        broadcastSession('login')
       } else {
         console.log('[Auth] Logged out')
         setUser(null)
-        broadcastSession(null)
+        broadcastSession('logout')
       }
     })
 
@@ -618,7 +590,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await applySessionToUser(session);
         
         // Broadcast login to other tabs (or fallback)
-        broadcastSession(session);
+        broadcastSession('login');
         
         // Refresh data for the logged‑in user
         await refreshData();
@@ -676,7 +648,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       // Always clear user state
       setUser(null)
-      broadcastSession(null);
+      broadcastSession('logout');
 
     } catch (err) {
       console.error('[Auth] Exception during logout:', err)
