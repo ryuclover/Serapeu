@@ -2,6 +2,7 @@ import type React from "react"
 import type { Metadata, Viewport } from "next"
 import { Geist, Geist_Mono } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
+import { ThemeProvider } from "@/components/theme-provider"
 import { AuthProvider } from "@/lib/auth-context"
 import { Navbar } from "@/components/navbar"
 import { Footer } from "@/components/footer"
@@ -42,12 +43,14 @@ export default function RootLayout({
   return (
     <html lang="pt-BR" suppressHydrationWarning>
       <body className={`font-sans antialiased min-h-screen flex flex-col`}>
-        <AuthProvider>
-          <Navbar />
-          <main className="flex-1 pt-16">{children}</main>
-          <Footer />
-          <Toaster />
-        </AuthProvider>
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
+          <AuthProvider>
+            <Navbar />
+            <main className="flex-1 pt-16">{children}</main>
+            <Footer />
+            <Toaster />
+          </AuthProvider>
+        </ThemeProvider>
         <Analytics />
       </body>
     </html>

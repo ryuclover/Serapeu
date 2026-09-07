@@ -74,18 +74,9 @@ export default function PerguntasPage() {
     const updatedUpvotedBy = hasUpvoted
       ? request.upvotedBy.filter((id) => id !== user.id)
       : [...request.upvotedBy, user.id]
-    const updatedUpvotes = hasUpvoted ? request.upvotes - 1 : request.upvotes + 1
+    const updatedUpvotes = hasUpvoted ? Math.max(0, request.upvotes - 1) : request.upvotes + 1
 
-    const { error } = await supabase
-      .from('tutorial_requests')
-      .update({ upvotes: updatedUpvotes, upvoted_by: updatedUpvotedBy })
-      .eq('id', requestId)
-
-    if (error) {
-      console.error('Erro ao registrar upvote na requisição:', error)
-      return
-    }
-
+    // Atualização otimista imediata na interface
     setRequests(
       requests.map((r) => {
         if (r.id === requestId) {
@@ -98,6 +89,28 @@ export default function PerguntasPage() {
         return r
       }),
     )
+
+    try {
+      if (hasUpvoted) {
+        const { error } = await supabase
+          .from('tutorial_request_votes')
+          .delete()
+          .eq('request_id', requestId)
+          .eq('user_id', user.id)
+        if (error) throw error
+      } else {
+        const { error } = await supabase
+          .from('tutorial_request_votes')
+          .insert({ request_id: requestId, user_id: user.id })
+        if (error) throw error
+      }
+    } catch (error) {
+      console.error('Erro ao registrar upvote na requisição:', error)
+      // Reverte em caso de falha de rede
+      setRequests(
+        requests.map((r) => (r.id === requestId ? request : r)),
+      )
+    }
   }
 
   return (

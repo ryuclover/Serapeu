@@ -22,12 +22,15 @@ import {
   BookOpen,
 } from "lucide-react"
 import { useState } from "react"
+import { useTheme } from "next-themes"
 import { useAuth } from "@/lib/auth-context"
 import { Logo } from "./logo"
 
 export function Navbar() {
   const router = useRouter()
-  const { user, darkMode, setDarkMode, tutorials } = useAuth()
+  const { user, tutorials } = useAuth()
+  const { resolvedTheme, setTheme } = useTheme()
+  const isDark = resolvedTheme === "dark"
   const [searchQuery, setSearchQuery] = useState("")
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const pendingCount = tutorials.filter((t) => !t.approved).length
@@ -73,11 +76,11 @@ export function Navbar() {
 
           <div className="hidden md:flex items-center gap-3">
             <button
-              onClick={() => setDarkMode(!darkMode)}
+              onClick={() => setTheme(isDark ? "light" : "dark")}
               className="p-2 rounded-full bg-amber-700/50 text-white hover:bg-amber-700/70 transition-colors"
               aria-label="Alternar tema"
             >
-              {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+              {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
             </button>
 
             {user ? (
@@ -137,11 +140,11 @@ export function Navbar() {
 
           <div className="flex md:hidden items-center gap-2">
             <button
-              onClick={() => setDarkMode(!darkMode)}
+              onClick={() => setTheme(isDark ? "light" : "dark")}
               className="p-2 rounded-full bg-amber-700/50 text-white hover:bg-amber-700/70 transition-colors"
               aria-label="Alternar tema"
             >
-              {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+              {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
             </button>
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}

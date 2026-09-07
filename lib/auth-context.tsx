@@ -45,8 +45,6 @@ interface AuthContextType {
   signUp: (email: string, password: string, name: string) => Promise<{ data: any; error: any }>
   updateProfile: (name: string) => Promise<{ error: any }>
   logout: () => Promise<void>
-  darkMode: boolean
-  setDarkMode: (value: boolean) => void
   tutorials: Tutorial[]
   setTutorials: React.Dispatch<React.SetStateAction<Tutorial[]>>
   problems: TutorialProblem[]
@@ -108,7 +106,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [supabase] = useState(() => createClient())
   const [user, setUser] = useState<UserType | null>(() => getCachedUser())
   const [authReady, setAuthReady] = useState(false)
-  const [darkMode, setDarkMode] = useState(true)
   const [tutorials, setTutorials] = useState<Tutorial[]>([])
   const [problems, setProblems] = useState<TutorialProblem[]>([])
   const [requests, setRequests] = useState<TutorialRequest[]>([])
@@ -117,15 +114,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Ref para evitar múltiplas inicializações simultâneas
   const initializingRef = useRef(false)
-
-  // ── Dark mode ────────────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (darkMode) {
-      document.documentElement.classList.add("dark")
-    } else {
-      document.documentElement.classList.remove("dark")
-    }
-  }, [darkMode])
 
   // ── Carrega perfil do usuário a partir da sessão ──────────────────────────
 
@@ -636,7 +624,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider value={{
       user, authReady, signIn, signUp, updateProfile, logout,
-      darkMode, setDarkMode,
       tutorials, setTutorials, problems, setProblems,
       requests, setRequests, users, setUsers,
       adminLogs, addAdminLog,
