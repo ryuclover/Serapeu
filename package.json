@@ -6,7 +6,8 @@
     "build": "next build",
     "dev": "next dev",
     "lint": "eslint .",
-    "start": "next start"
+    "start": "next start",
+    "seed": "node --env-file=.env.local -r ts-node/register scripts/seed.ts || node scripts/seed.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

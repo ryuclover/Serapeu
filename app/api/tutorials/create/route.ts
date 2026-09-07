@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
-import { createServiceRoleClient } from '@/lib/supabase/server'
+import { createRouteHandlerClient, createServiceRoleClient } from '@/lib/supabase/server'
 
 type CreateTutorialBody = {
   title?: string
@@ -20,20 +19,7 @@ const tutorialSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() {
-            return request.cookies.getAll()
-          },
-          setAll() {
-            /* noop */
-          },
-        },
-      }
-    )
+    const supabase = createRouteHandlerClient(request)
 
     const {
       data: { user },

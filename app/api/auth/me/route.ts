@@ -1,23 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
-import { createServiceRoleClient } from '@/lib/supabase/server'
+import { createRouteHandlerClient, createServiceRoleClient } from '@/lib/supabase/server'
+
+export const dynamic = 'force-dynamic'
+
+const NO_CACHE_HEADERS = {
+  'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+  Pragma: 'no-cache',
+  Expires: '0',
+}
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() {
-            return request.cookies.getAll()
-          },
-          setAll() {
-            /* noop */
-          },
-        },
-      }
-    )
+    const supabase = createRouteHandlerClient(request)
 
     const {
       data: { user },
@@ -25,7 +19,10 @@ export async function GET(request: NextRequest) {
     } = await supabase.auth.getUser()
 
     if (authError || !user) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+      return NextResponse.json(
+        { error: 'Not authenticated' },
+        { status: 401, headers: NO_CACHE_HEADERS }
+      )
     }
 
     const service = createServiceRoleClient()
@@ -33,23 +30,66 @@ export async function GET(request: NextRequest) {
       .from('profiles')
       .select('id, email, name, role, banned, created_at')
       .eq('id', user.id)
-      .single()
+      .maybeSingle()
 
-    if (profileError) {
-      return NextResponse.json({ error: profileError.message }, { status: 500 })
+    let userProfile = profile
+
+    // Auto-recuperação (Self-Healing / JIT Provisioning):
+    // Se o perfil não existir ainda por atraso do trigger de cadastro, cria automaticamente.
+    if (!userProfile) {
+      const fallbackName =
+        user.user_metadata?.name ||
+        user.user_metadata?.full_name ||
+        (user.email ? user.email.split('@')[0] : 'Usuário')
+
+      const { data: newProfile, error: insertError } = await service
+        .from('profiles')
+        .insert({
+          id: user.id,
+          email: user.email || '',
+          name: fallbackName,
+          role: 'USER',
+          banned: false,
+        })
+        .select('id, email, name, role, banned, created_at')
+        .single()
+
+      if (insertError || !newProfile) {
+        return NextResponse.json(
+          { error: profileError?.message || insertError?.message || 'Profile not found' },
+          { status: 500, headers: NO_CACHE_HEADERS }
+        )
+      }
+
+      userProfile = newProfile
     }
 
-    return NextResponse.json({
-      user: {
-        id: user.id,
-        email: user.email,
-        name: profile.name,
-        role: profile.role,
-        banned: Boolean(profile.banned),
-        createdAt: profile.created_at,
+    if (userProfile.banned) {
+      return NextResponse.json(
+        { banned: true, error: 'Sua conta foi suspensa pela moderação.' },
+        { status: 403, headers: NO_CACHE_HEADERS }
+      )
+    }
+
+    return NextResponse.json(
+      {
+        user: {
+          id: user.id,
+          email: user.email,
+          name: userProfile.name,
+          role: userProfile.role,
+          banned: false,
+          createdAt: userProfile.created_at,
+        },
       },
-    })
-  } catch (err: any) {
-    return NextResponse.json({ error: err?.message || 'Unknown error' }, { status: 500 })
+      { headers: NO_CACHE_HEADERS }
+    )
+  } catch (err: unknown) {
+    const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+    return NextResponse.json(
+      { error: errorMessage },
+      { status: 500, headers: NO_CACHE_HEADERS }
+    )
   }
 }
+

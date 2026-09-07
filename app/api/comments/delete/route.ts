@@ -1,6 +1,5 @@
 import { NextResponse, NextRequest } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
-import { createClient } from '@supabase/supabase-js'
+import { createRouteHandlerClient, createServiceRoleClient } from '@/lib/supabase/server'
 
 export async function POST(request: NextRequest) {
   try {
@@ -11,30 +10,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid payload' }, { status: 400 })
     }
 
-    const supabaseAuth = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
-      {
-        cookies: {
-          getAll() {
-            return request.cookies.getAll()
-          },
-          setAll() {
-            /* noop */
-          },
-        },
-      },
-    )
+    const supabaseAuth = createRouteHandlerClient(request)
 
     const { data: { user } } = await supabaseAuth.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
     // service role client for admin checks and safe deletes
-    const service = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-      process.env.SUPABASE_SERVICE_ROLE_KEY || '',
-      { auth: { persistSession: false } }
-    )
+    const service = createServiceRoleClient()
 
     // Fetch comment to check owner
     const { data: comment } = await service.from('comments').select('*').eq('id', commentId).single()

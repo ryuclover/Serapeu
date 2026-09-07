@@ -37,6 +37,11 @@ export default function PerguntasPage() {
   const handleCreateRequest = async () => {
     if (!user || !title.trim() || !description.trim()) return
 
+    if (user.banned) {
+      alert('Sua conta está suspensa e não pode criar novas requisições.')
+      return
+    }
+
     const { error } = await supabase
       .from('tutorial_requests')
       .insert({
@@ -48,6 +53,7 @@ export default function PerguntasPage() {
 
     if (error) {
       console.error(error)
+      alert('Erro ao enviar requisição. Tente novamente.')
       return
     }
 
@@ -329,7 +335,7 @@ export default function PerguntasPage() {
                   ? "Tente ajustar os filtros de busca."
                   : "Seja o primeiro a pedir um tutorial!"}
               </p>
-              {user && (
+              {user ? (
                 <Button
                   onClick={() => setIsCreating(true)}
                   className="bg-amber-600 hover:bg-amber-700 text-white gap-2"
@@ -337,6 +343,19 @@ export default function PerguntasPage() {
                   <Plus className="w-4 h-4" />
                   Criar Requisição
                 </Button>
+              ) : (
+                <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                  <Button asChild className="bg-amber-600 hover:bg-amber-700 text-white gap-2">
+                    <Link href="/entrar">
+                      Entrar para pedir tutorial
+                    </Link>
+                  </Button>
+                  <Button variant="outline" asChild className="gap-2">
+                    <Link href="/registrar">
+                      Criar conta grátis
+                    </Link>
+                  </Button>
+                </div>
               )}
             </div>
           )}

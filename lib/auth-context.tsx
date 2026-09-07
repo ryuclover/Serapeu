@@ -82,7 +82,7 @@ interface AuthContextType {
 validateSupabaseConfig()
 const AuthContext = createContext<AuthContextType | null>(null)
 
-// Helpers para persistência ultra-agressiva na UI
+// Helpers para cache leve de perfil na UI
 const getCachedUser = (): UserType | null => {
   if (typeof window === 'undefined') return null
   try {
@@ -134,6 +134,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     try {
       const meResponse = await fetch('/api/auth/me', { credentials: 'include' })
+      if (meResponse.status === 403) {
+        // Usuário banido: encerra sessão imediatamente
+        toast.error('Sua conta foi suspensa pela moderação.')
+        await supabase.auth.signOut()
+        setUser(null)
+        setCachedUser(null)
+        if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/acesso-negado')) {
+          window.location.href = '/acesso-negado'
+        }
+        return
+      }
+
       let profile: { name?: string; role?: string; banned?: boolean } | null = null
 
       if (meResponse.ok) {
@@ -141,13 +153,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         profile = meJson?.user || null
       }
 
-      const finalUser = {
+      const finalUser: UserType = {
         id: session.user.id,
         email: session.user.email!,
         name: profile?.name || session.user.user_metadata?.name || session.user.email!.split('@')[0],
         role: (profile?.role === "ADMIN" ? "ADMIN" : "USER") as "USER" | "ADMIN",
         createdAt: session.user.created_at,
-        banned: Boolean(profile?.banned),
+        banned: false,
         savedTutorials: [],
         votedTutorials: [],
       }
@@ -155,7 +167,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(finalUser)
       setCachedUser(finalUser)
       
-      // Carrega dados adicionais (salvos/votados) se não estiver carregando da sessão inicial otimista
+      // Carrega dados adicionais (salvos/votados)
       const [{ data: savedData }, { data: votedData }] = await Promise.all([
         supabase.from('saved_tutorials').select('tutorial_id').eq('user_id', session.user.id),
         supabase.from('tutorial_votes').select('tutorial_id').eq('user_id', session.user.id),
@@ -182,35 +194,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (initializingRef.current) return
     initializingRef.current = true
 
-    const safetyTimeout = setTimeout(() => setAuthReady(true), 8000)
+    const safetyTimeout = setTimeout(() => setAuthReady(true), 6000)
 
     const boot = async () => {
       try {
-        // Fallback robusto: Tenta ler do localStorage primeiro
-        const persisted = typeof window !== 'undefined' ? localStorage.getItem('supabase-auth-token') : null;
-        if (persisted) {
-          try {
-            const parsed = JSON.parse(persisted);
-            if (parsed?.access_token) {
-              const { error } = await supabase.auth.setSession({
-                access_token: parsed.access_token,
-                refresh_token: parsed.refresh_token
-              });
-              if (error) {
-                  console.warn('[Auth] Falha ao restaurar sessão do localStorage:', error);
-                  localStorage.removeItem('supabase-auth-token');
-                  localStorage.removeItem('serapeu-user-cache');
-                  setUser(null);
-              }
-            }
-          } catch (e) {
-             console.warn('[Auth] Falha ao parsear token do localStorage:', e);
-             localStorage.removeItem('supabase-auth-token');
-             localStorage.removeItem('serapeu-user-cache');
-             setUser(null);
-          }
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.user) {
+          await loadUserFromSession(session)
+        } else {
+          setUser(null)
+          setCachedUser(null)
         }
-
         await refreshData()
       } catch (err) {
         console.error('[Auth] Erro durante inicialização:', err)
@@ -227,73 +221,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         if (session?.user) {
-          // Salva no localStorage para persistência cross-tab robusta
-          if (typeof window !== 'undefined') {
-              localStorage.setItem('supabase-auth-token', JSON.stringify({
-                  access_token: session.access_token,
-                  refresh_token: session.refresh_token,
-              }));
-          }
           await loadUserFromSession(session)
           if (event !== 'TOKEN_REFRESHED') {
             await refreshData()
           }
         } else if (event === 'INITIAL_SESSION') {
-          // Se INITIAL_SESSION disparar e não houver usuário, o token expirou ou não existe.
-          // Devemos limpar o cache agressivo para evitar o visual de "falso logado".
-          if (typeof window !== 'undefined') {
-              localStorage.removeItem('supabase-auth-token');
-              localStorage.removeItem('serapeu-user-cache');
-          }
-          setUser(null);
+          setUser(null)
+          setCachedUser(null)
         }
       } else if (event === 'SIGNED_OUT') {
-        if (typeof window !== 'undefined') {
-             localStorage.removeItem('supabase-auth-token');
-             localStorage.removeItem('serapeu-user-cache');
-        }
         setUser(null)
+        setCachedUser(null)
       }
     })
-
-    // Sincroniza abas instantaneamente quando há login/logout em outra aba
-    const handleStorageChange = async (e: StorageEvent) => {
-      if (e.key === 'supabase-auth-token') {
-        if (e.newValue) {
-          try {
-            const parsed = JSON.parse(e.newValue);
-            if (parsed?.access_token) {
-              await supabase.auth.setSession({
-                access_token: parsed.access_token,
-                refresh_token: parsed.refresh_token
-              });
-            }
-          } catch (err) {}
-        } else {
-          await supabase.auth.signOut();
-        }
-      } else if (e.key === 'serapeu-user-cache') {
-          // Mantém a UI em sincronia imediata (não espera o Supabase resolver o token)
-          if (e.newValue) {
-              try {
-                  setUser(JSON.parse(e.newValue));
-              } catch (err) {}
-          } else {
-              setUser(null);
-          }
-      }
-    };
-    
-    if (typeof window !== 'undefined') {
-      window.addEventListener('storage', handleStorageChange);
-    }
 
     return () => {
       clearTimeout(safetyTimeout)
       subscription.unsubscribe()
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('storage', handleStorageChange);
-      }
     }
   }, [supabase]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -326,7 +270,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         })
         
         // Agrupar comentários
-        const commentsByTutorial = (result.comments || []).reduce<Record<string, Comment[]>>((acc: any, c: any) => {
+        const commentsByTutorial = ((result.comments || []) as any[]).reduce((acc: Record<string, Comment[]>, c: any) => {
           if (!acc[c.tutorial_id]) acc[c.tutorial_id] = []
           acc[c.tutorial_id].push({
             id: c.id,
@@ -594,8 +538,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const reportProblem = async (problem: Omit<TutorialProblem, "id" | "createdAt" | "resolved">) => {
     if (!user) { toast.error('Você precisa estar logado para relatar um problema.'); return }
+    if (user.banned) { toast.error('Sua conta está suspensa.'); return }
     const { data, error } = await supabase.from('tutorial_problems').insert({
-      tutorial_id: problem.tutorialId, user_id: problem.userId, user_name: problem.userName,
+      tutorial_id: problem.tutorialId, user_id: user.id, user_name: user.name,
       step_number: problem.stepNumber, description: problem.description, resolved: false,
     }).select('*').single()
     if (error || !data) { toast.error('Não foi possível relatar o problema. Tente novamente.'); return }

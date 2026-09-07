@@ -1,43 +1,15 @@
-import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
+import { requireAdminSession } from '@/lib/supabase/server'
 import type { Tutorial, UserType, TutorialProblem, TutorialRequest } from '@/lib/types'
 
 export async function GET(request: NextRequest) {
   try {
-    const supabaseAuth = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() { return request.cookies.getAll() },
-          setAll() { /* noop */ },
-        },
-      }
-    )
-
-    const { data: { user } } = await supabaseAuth.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
-
-    // Use service role to check role to avoid RLS recursion
-    const serviceRoleClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-      process.env.SUPABASE_SERVICE_ROLE_KEY || '',
-      { auth: { persistSession: false } }
-    )
-    
-    const { data: profile } = await serviceRoleClient
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single()
-
-    if (profile?.role !== 'ADMIN') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const { service, errorResponse } = await requireAdminSession(request)
+    if (errorResponse || !service) return errorResponse
 
     console.log('[Admin Data] Fetching all admin data with service role...')
     
-    // Use the already created serviceRoleClient (renamed from supabase)
-    const supabase = serviceRoleClient;
+    const supabase = service
 
     // Fetch tutorials
     console.log('[Admin Data] Fetching tutorials...')

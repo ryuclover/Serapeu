@@ -1,28 +1,62 @@
 "use client"
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
-import { TrendingUp, MessageCircle, PlusCircle, BookOpen } from "lucide-react"
+import { TrendingUp, MessageCircle, PlusCircle, BookOpen, Loader2 } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
-import { categories } from "@/lib/types"
+import { categories, type Tutorial } from "@/lib/types"
 import { TutorialCard } from "@/components/tutorial-card"
+import { Pagination } from "@/components/pagination"
+import { Button } from "@/components/ui/button"
 
 export default function HomePage() {
   const searchParams = useSearchParams()
   const searchQuery = searchParams.get("search") || ""
-  const { user, tutorials } = useAuth()
+  const { user } = useAuth()
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
 
-  const approvedTutorials = tutorials.filter((t) => t.approved);
+  const [tutorials, setTutorials] = useState<Tutorial[]>([])
+  const [loading, setLoading] = useState(true)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalItems, setTotalItems] = useState(0)
+  const ITEMS_PER_PAGE = 8
 
+  const loadTutorials = useCallback(async (page: number, cat: string | null, search: string) => {
+    setLoading(true)
+    try {
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: ITEMS_PER_PAGE.toString(),
+      })
+      if (cat) params.set("category", cat)
+      if (search) params.set("search", search)
 
-  const filteredTutorials = approvedTutorials.filter((t) => {
-    const matchesSearch =
-      t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.description.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesCategory = !selectedCategory || t.category === selectedCategory
-    return matchesSearch && matchesCategory
-  })
+      const res = await fetch(`/api/tutorials?${params.toString()}`)
+      const data = await res.json()
+
+      if (data.success) {
+        setTutorials(data.tutorials || [])
+        setTotalPages(data.totalPages || 1)
+        setTotalItems(data.total || 0)
+      } else {
+        setTutorials([])
+      }
+    } catch (err) {
+      console.error("Erro ao carregar tutoriais:", err)
+      setTutorials([])
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [selectedCategory, searchQuery])
+
+  useEffect(() => {
+    loadTutorials(currentPage, selectedCategory, searchQuery)
+  }, [currentPage, selectedCategory, searchQuery, loadTutorials])
 
   return (
     <div className="bg-background">
@@ -102,14 +136,60 @@ export default function HomePage() {
             </div>
 
             <div className="space-y-4">
-              {filteredTutorials.length > 0 ? (
-                filteredTutorials.map((tutorial) => (
-                  <TutorialCard key={tutorial.id} tutorial={tutorial} />
-                ))
+              {loading ? (
+                <div className="bg-card rounded-xl p-12 text-center shadow-sm border border-border flex flex-col items-center justify-center gap-3 text-muted-foreground">
+                  <Loader2 className="w-8 h-8 animate-spin text-amber-600" />
+                  <p>Carregando tutoriais...</p>
+                </div>
+              ) : tutorials.length > 0 ? (
+                <>
+                  {tutorials.map((tutorial) => (
+                    <TutorialCard key={tutorial.id} tutorial={tutorial} />
+                  ))}
+
+                  {totalPages > 1 && (
+                    <Pagination
+                      currentPage={currentPage}
+                      totalPages={totalPages}
+                      itemsPerPage={ITEMS_PER_PAGE}
+                      totalItems={totalItems}
+                      onPageChange={setCurrentPage}
+                    />
+                  )}
+                </>
               ) : (
-                <div className="bg-card rounded-xl p-8 text-center shadow-sm border border-border">
-                  <BookOpen className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-                  <p className="text-muted-foreground">Nenhum tutorial encontrado.</p>
+                <div className="bg-card rounded-xl p-10 text-center shadow-sm border border-border">
+                  <BookOpen className="w-12 h-12 text-amber-600/60 mx-auto mb-3" />
+                  <h3 className="text-lg font-semibold text-foreground mb-1">Nenhum tutorial encontrado</h3>
+                  <p className="text-muted-foreground mb-6 max-w-md mx-auto text-sm">
+                    {searchQuery || selectedCategory
+                      ? "Nenhum resultado corresponde aos seus filtros de busca."
+                      : "Ainda não há tutoriais aprovados. Que tal ser o primeiro a compartilhar seu conhecimento?"}
+                  </p>
+                  <div className="flex flex-wrap items-center justify-center gap-3">
+                    {user ? (
+                      <Link href="/criar">
+                        <Button className="bg-amber-600 hover:bg-amber-700 text-white gap-2">
+                          <PlusCircle className="w-4 h-4" />
+                          Criar Primeiro Tutorial
+                        </Button>
+                      </Link>
+                    ) : (
+                      <Link href="/entrar">
+                        <Button className="bg-amber-600 hover:bg-amber-700 text-white">
+                          Fazer Login para Publicar
+                        </Button>
+                      </Link>
+                    )}
+                    {(searchQuery || selectedCategory) && (
+                      <Button
+                        variant="outline"
+                        onClick={() => setSelectedCategory(null)}
+                      >
+                        Limpar Filtros
+                      </Button>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

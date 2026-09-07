@@ -1,33 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
-import { createServiceRoleClient } from '@/lib/supabase/server'
+import { requireAdminSession } from '@/lib/supabase/server'
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() {
-            return request.cookies.getAll()
-          },
-          setAll() {
-            /* noop */
-          },
-        },
-      }
-    )
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
-
-    const service = createServiceRoleClient()
-    const { data: profile } = await service.from('profiles').select('role').eq('id', user.id).single()
-    if (profile?.role !== 'ADMIN') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const { service, errorResponse } = await requireAdminSession(request)
+    if (errorResponse || !service) return errorResponse
 
     const body = await request.json()
     const id = body?.id
@@ -41,3 +18,4 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: err?.message || 'Unknown error' }, { status: 500 })
   }
 }
+

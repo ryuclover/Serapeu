@@ -77,18 +77,23 @@ function TutorialHeader({ tutorial }: { tutorial: Tutorial }) {
 
       {/* Author info */}
       <div className="flex items-center justify-between flex-wrap gap-4 pt-4 border-t border-border">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-gradient-to-br from-amber-500 to-amber-600 rounded-full flex items-center justify-center text-white font-bold">
+        <Link
+          href={`/usuario/${tutorial.authorId}`}
+          className="flex items-center gap-3 group hover:opacity-80 transition-opacity"
+        >
+          <div className="w-10 h-10 bg-gradient-to-br from-amber-500 to-amber-600 rounded-full flex items-center justify-center text-white font-bold group-hover:ring-2 group-hover:ring-amber-500/50 transition-all">
             {tutorial.authorName.charAt(0)}
           </div>
           <div>
-            <p className="font-medium text-foreground">{tutorial.authorName}</p>
+            <p className="font-medium text-foreground group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
+              {tutorial.authorName}
+            </p>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Clock className="w-4 h-4" />
               {tutorial.createdAt}
             </div>
           </div>
-        </div>
+        </Link>
 
         <div className="flex items-center gap-2">
           <button className="p-2 hover:bg-secondary rounded-lg transition-colors text-muted-foreground hover:text-foreground">

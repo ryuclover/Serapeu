@@ -1,4 +1,4 @@
-﻿# 📋 TODO — Serapeu Development Roadmap
+# 📋 TODO — Serapeu Development Roadmap
 
 > **Branch ativa:** feature/supabase-migration
 > **Atualizado:** 10/04/2026
@@ -19,50 +19,40 @@
 
 ## 🔴 CRÍTICO — Problemas detectados na inspeção
 
-- [ ] **1. Carregamento de conteúdos reais**
-  - A home mostra “Nenhum tutorial encontrado” em ambiente sem seed.
-  - Não há dados de tutorial ou requisição visíveis mesmo com a rota funcionando.
-  - Precisamos validar que o Supabase retorna e renderiza tutoriais, comentários e problemas.
-
-- [ ] **2. Fluxo de autenticação**
-  - O login, registro e páginas de verificação existem, mas precisam ser testados com credenciais reais.
-  - Validar se `Entrar`, `Criar conta`, `verifique-seu-email` e `email-confirmado` estão integrados ao Supabase.
-  - Confirmar se o registro requer aceitação de termos e se faz redirect correto.
-
-- [ ] **3. Painel admin e controle de acesso**
-  - A rota `/admin` está protegida, mas precisa ser verificada com usuário admin e usuário comum.
-  - Confirmar se as ações de moderação estão disponíveis para admins e bloqueadas para outros.
-  - Garantir que a UI admin seja carregada corretamente e sem erros.
-
-- [ ] **4. Empty states e mensagens de interface**
-  - `/perguntas` exibe empty state sem dados, mas falta orientação de chamada à ação para usuário logado.
-  - Os estados offline, manutenção e acesso negado existem e devem ser polidos para consistência.
-  - Realizar melhorias rápidas de UX nessas telas.
-
-- [ ] **5. Configuração de dev / Next.js warnings**
-  - O dev server mostra warning de `allowedDevOrigins` para `127.0.0.1`.
-  - Há alertas de recursos preloaded não usados para `_next/static/chunks/...css`.
-  - Corrigir configuração para evitar warnings no desenvolvimento local.
+- [x] **1. Carregamento de conteúdos reais**
+  - Adicionada paginação e busca server-side no Supabase (`/api/tutorials`, `/api/tutorials/[id]`).
+  - Home e página individual de tutorial integradas com fallbacks e spinners.
+- [x] **2. Fluxo de autenticação**
+  - Autenticação migrada para `@supabase/ssr` exclusivamente com cookies seguros (removido localStorage exposto).
+  - Bloqueio imediato e enforcement de usuários banidos com logout automático e redirecionamento.
+- [x] **3. Painel admin e controle de acesso**
+  - Rotas de API protegidas com checagem de sessão e validação de banimento e role.
+  - Painel com abas, busca e ações de moderação integradas.
+- [x] **4. Empty states e mensagens de interface**
+  - `/perguntas` atualizada com call-to-action dinâmico tanto para usuários logados quanto para visitantes criarem conta.
+  - Telas `/offline`, `/manutencao` e `/acesso-negado` padronizadas.
+- [x] **5. Configuração de dev / Next.js warnings**
+  - Configurado `allowedDevOrigins: ['127.0.0.1', 'localhost']` em `next.config.mjs`.
+  - Flags perigosas de `ignoreBuildErrors` e `unoptimized` removidas; build 100% validado.
 
 ---
 
 ## 🟠 ALTO — Ajustes imediatos de funcionalidade
 
-- [ ] Confirmar criação de requisições logadas e persistência de upvotes.
-- [ ] Confirmar postagem de comentários e relatórios de problemas no tutorial.
-- [ ] Garantir exclusão de tutorial/requisição/usuário em admin com confirmação.
-- [ ] Adicionar importação/seed de demo para ambiente de desenvolvimento.
-- [ ] Melhorar labels de botão e textos de ajuda nas telas de auth e autorizações.
+- [x] Confirmação de integridade nos endpoints de criação/votos e relatórios de problemas.
+- [x] Proteção e autorização em rotas de exclusão e edição de comentários e tutoriais.
+- [x] Script de seed estruturado (`scripts/seed.ts` e `npm run seed`) com migration oficial (`supabase/migrations/0001_initial_schema.sql`).
+- [x] Melhorias nas mensagens e tratamento de estados de erro nas páginas de auth.
 
 ---
 
 ## 🟡 MÉDIO — Próximos recursos após estabilizar o core
 
-- [ ] Implementar perfil público de usuário em `/usuario/[id]`.
-- [ ] Mostrar tutoriais criados, upvotes recebidos e contribuições por usuário.
+- [x] Implementar perfil público de usuário em `/usuario/[id]`.
+- [x] Mostrar tutoriais criados, upvotes recebidos e contribuições por usuário no perfil público.
 - [ ] Adicionar tags para tutoriais e filtro por tags.
-- [ ] Criar sistema de notificações leve (toasts + status de novas ações).
-- [ ] Melhorar salvamento de tutoriais e lista de favoritos.
+- [x] Sistema de notificações e feedback com Sonner toaster.
+- [x] Salvamento de tutoriais e lista de favoritos integrada ao perfil.
 
 ---
 
@@ -71,8 +61,8 @@
 - [ ] Sistema de badges/achievements.
 - [ ] Upload de imagens para tutoriais.
 - [ ] Testes automatizados (Jest / React Testing Library).
-- [ ] SEO com meta tags dinâmicas e sitemap.
-- [ ] Documentar setup e deploy no README.
+- [x] SEO com meta tags dinâmicas, sitemap (`app/sitemap.ts`) e robots (`app/robots.ts`).
+- [x] Documentar setup e deploy no README e no relatório de execução.
 
 ---
 
