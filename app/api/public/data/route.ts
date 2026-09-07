@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServiceRoleClient } from '@/lib/supabase/server'
+import { logger } from '@/lib/logger'
 
 export const dynamic = 'force-dynamic'
 
@@ -7,43 +8,65 @@ export async function GET() {
   try {
     const supabase = createServiceRoleClient()
 
-    // Busca tutoriais aprovados
+    // 1. Busca tutoriais aprovados e não deletados
     const { data: tutorialsData, error: tutorialsError } = await supabase
       .from('tutorials')
       .select('*, profiles(name)')
       .eq('approved', true)
+      .is('deleted_at', null)
       .order('created_at', { ascending: false })
 
     if (tutorialsError) throw tutorialsError
 
-    // Busca comentários
+    // 2. Busca comentários ativos
     const { data: commentsData } = await supabase
       .from('comments')
       .select('*')
+      .is('deleted_at', null)
 
-    // Busca problemas
+    // 3. Busca problemas relatados
     const { data: problemsData } = await supabase
       .from('tutorial_problems')
       .select('*')
 
-    // Busca requisições
+    // 4. Busca requisições ativas
     const { data: requestsData } = await supabase
       .from('tutorial_requests')
       .select('*, profiles(name)')
+      .is('deleted_at', null)
       .order('created_at', { ascending: false })
+
+    // 5. Busca votos associativos de requisições para hidratação correta
+    const { data: requestVotes } = await supabase
+      .from('tutorial_request_votes')
+      .select('request_id, user_id')
+
+    const votesByRequest: Record<string, string[]> = {}
+    for (const v of requestVotes || []) {
+      if (!votesByRequest[v.request_id]) votesByRequest[v.request_id] = []
+      votesByRequest[v.request_id].push(v.user_id)
+    }
+
+    const requests = (requestsData || []).map((r) => ({
+      ...r,
+      upvoted_by: Array.from(
+        new Set([...(r.upvoted_by || []), ...(votesByRequest[r.id] || [])])
+      ),
+    }))
 
     return NextResponse.json({
       success: true,
       tutorials: tutorialsData || [],
       comments: commentsData || [],
       problems: problemsData || [],
-      requests: requestsData || [],
+      requests,
     })
   } catch (error: any) {
-    console.error('[Public Data] Error:', error)
+    logger.error('Falha ao carregar dados públicos da plataforma', { error: error?.message })
     return NextResponse.json(
-      { success: false, error: error.message },
+      { success: false, error: error?.message || 'Server error' },
       { status: 500 }
     )
   }
 }
+

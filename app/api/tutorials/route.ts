@@ -50,6 +50,7 @@ export async function GET(request: NextRequest) {
         .from('comments')
         .select('*')
         .in('tutorial_id', tutorialIds)
+        .is('deleted_at', null)
 
       commentsByTutorial = ((commentsData || []) as any[]).reduce((acc, c) => {
         if (!acc[c.tutorial_id]) acc[c.tutorial_id] = []

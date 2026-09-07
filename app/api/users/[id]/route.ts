@@ -14,23 +14,25 @@ export async function GET(
 
     const supabase = createServiceRoleClient()
 
-    // 1. Perfil público
+    // 1. Perfil público (ignora usuários removidos)
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('id, name, role, created_at')
       .eq('id', id)
+      .is('deleted_at', null)
       .single()
 
     if (profileError || !profile) {
       return NextResponse.json({ error: 'Perfil não encontrado' }, { status: 404 })
     }
 
-    // 2. Tutoriais do autor
+    // 2. Tutoriais do autor (ignora tutoriais removidos)
     const { data: tutorialsData, error: tutorialsError } = await supabase
       .from('tutorials')
       .select('*')
       .eq('author_id', id)
       .eq('approved', true)
+      .is('deleted_at', null)
       .order('created_at', { ascending: false })
 
     if (tutorialsError) {

@@ -66,45 +66,70 @@ class Logger {
     }
   }
 
-  public info(message: string, context?: string, metadata?: Record<string, unknown>) {
+  public info(
+    message: string,
+    metadataOrContext?: string | Record<string, unknown>,
+    context?: string
+  ) {
+    const isContextString = typeof metadataOrContext === 'string'
+    const finalContext = isContextString ? metadataOrContext : context
+    const finalMetadata = !isContextString ? metadataOrContext : undefined
+
     this.format({
       timestamp: new Date().toISOString(),
       level: 'info',
       message,
-      context,
-      metadata: metadata ? (maskSensitiveData(metadata) as Record<string, unknown>) : undefined,
+      context: finalContext,
+      metadata: finalMetadata ? (maskSensitiveData(finalMetadata) as Record<string, unknown>) : undefined,
     })
   }
 
-  public warn(message: string, context?: string, metadata?: Record<string, unknown>) {
+  public warn(
+    message: string,
+    metadataOrContext?: string | Record<string, unknown>,
+    context?: string
+  ) {
+    const isContextString = typeof metadataOrContext === 'string'
+    const finalContext = isContextString ? metadataOrContext : context
+    const finalMetadata = !isContextString ? metadataOrContext : undefined
+
     this.format({
       timestamp: new Date().toISOString(),
       level: 'warn',
       message,
-      context,
-      metadata: metadata ? (maskSensitiveData(metadata) as Record<string, unknown>) : undefined,
+      context: finalContext,
+      metadata: finalMetadata ? (maskSensitiveData(finalMetadata) as Record<string, unknown>) : undefined,
     })
   }
 
   public error(
     message: string,
-    err?: unknown,
+    errOrMetadata?: unknown,
     context?: string,
     metadata?: Record<string, unknown>
   ) {
-    const errorDetails =
-      err instanceof Error
-        ? { message: err.message, stack: err.stack }
-        : err
-        ? { message: String(err) }
-        : undefined
+    let errorDetails: { message: string; stack?: string } | undefined
+    let finalMetadata = metadata
+    const finalContext = context
+
+    if (errOrMetadata instanceof Error) {
+      errorDetails = { message: errOrMetadata.message, stack: errOrMetadata.stack }
+    } else if (errOrMetadata && typeof errOrMetadata === 'object') {
+      finalMetadata = { ...(errOrMetadata as Record<string, unknown>), ...metadata }
+      const errProp = (errOrMetadata as Record<string, unknown>).error
+      if (errProp) {
+        errorDetails = { message: String(errProp) }
+      }
+    } else if (errOrMetadata !== undefined) {
+      errorDetails = { message: String(errOrMetadata) }
+    }
 
     this.format({
       timestamp: new Date().toISOString(),
       level: 'error',
       message,
-      context,
-      metadata: metadata ? (maskSensitiveData(metadata) as Record<string, unknown>) : undefined,
+      context: finalContext,
+      metadata: finalMetadata ? (maskSensitiveData(finalMetadata) as Record<string, unknown>) : undefined,
       error: errorDetails,
     })
   }
