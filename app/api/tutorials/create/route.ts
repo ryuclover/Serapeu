@@ -3,6 +3,7 @@ import { createRouteHandlerClient, createServiceRoleClient } from '@/lib/supabas
 import { createTutorialSchema } from '@/lib/validations'
 import { sanitizeText } from '@/lib/sanitize'
 import { logger } from '@/lib/logger'
+import { checkRateLimit, RATE_LIMIT_RULES, rateLimitResponse } from '@/lib/ratelimit'
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,6 +16,13 @@ export async function POST(request: NextRequest) {
 
     if (authError || !user) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+    }
+
+    // Rate limit preventivo contra spam (5 por hora por usuário)
+    const rateLimit = checkRateLimit(`tutorial-create:${user.id}`, RATE_LIMIT_RULES.TUTORIAL_CREATE)
+    if (!rateLimit.success) {
+      logger.warn('Rate limit de criação de tutorial excedido', { userId: user.id })
+      return rateLimitResponse(rateLimit)
     }
 
     const json = await request.json()

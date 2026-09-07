@@ -2,6 +2,8 @@ import { NextResponse, NextRequest } from 'next/server'
 import { createRouteHandlerClient, createServiceRoleClient } from '@/lib/supabase/server'
 import { createCommentSchema } from '@/lib/validations'
 import { sanitizeText } from '@/lib/sanitize'
+import { logger } from '@/lib/logger'
+import { checkRateLimit, RATE_LIMIT_RULES, rateLimitResponse } from '@/lib/ratelimit'
 
 export async function POST(request: NextRequest) {
   try {
@@ -19,6 +21,13 @@ export async function POST(request: NextRequest) {
 
     const { data: { user } } = await supabaseAuth.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+
+    // Rate limit anti-flood (1 a cada 10s por usuário)
+    const rateLimit = checkRateLimit(`comment-create:${user.id}`, RATE_LIMIT_RULES.COMMENT_CREATE)
+    if (!rateLimit.success) {
+      logger.warn('Rate limit de comentários atingido', { userId: user.id, tutorialId })
+      return rateLimitResponse(rateLimit)
+    }
 
     const service = createServiceRoleClient()
 
