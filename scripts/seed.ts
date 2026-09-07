@@ -15,17 +15,21 @@ const supabase = createClient(url, serviceKey, {
 async function seed() {
   console.log('🌱 Iniciando seed de dados para desenvolvimento...')
 
-  // 1. Criar ou buscar perfil padrão demo
-  const demoUserId = '00000000-0000-0000-0000-000000000001'
-  const demoEmail = 'demo@serapeu.com'
+  // 1. Buscar perfil existente no banco para ser o autor do seed
+  const { data: existingProfiles } = await supabase.from('profiles').select('id, name').limit(1)
+  let authorId = existingProfiles?.[0]?.id
+  let authorName = existingProfiles?.[0]?.name || 'Serapeu Mestre'
 
-  await supabase.from('profiles').upsert({
-    id: demoUserId,
-    email: demoEmail,
-    name: 'Serapeu Mestre',
-    role: 'ADMIN',
-    banned: false,
-  })
+  if (!authorId) {
+    authorId = '00000000-0000-0000-0000-000000000001'
+    await supabase.from('profiles').upsert({
+      id: authorId,
+      email: 'demo@serapeu.com',
+      name: authorName,
+      role: 'ADMIN',
+      banned: false,
+    })
+  }
 
   // 2. Tutoriais de exemplo
   const sampleTutorials = [
@@ -39,7 +43,7 @@ async function seed() {
         'Instale a versão LTS do Node: nvm install --lts',
         'Verifique a instalação: node -v && npm -v',
       ],
-      author_id: demoUserId,
+      author_id: authorId,
       approved: true,
       upvotes: 12,
     },
@@ -54,7 +58,7 @@ async function seed() {
         'Deixe crescer em tigela coberta por 1 hora.',
         'Modele o pão e asse em forno pré-aquecido a 200°C por 30 a 35 minutos.',
       ],
-      author_id: demoUserId,
+      author_id: authorId,
       approved: true,
       upvotes: 8,
     },
@@ -68,7 +72,7 @@ async function seed() {
         'Posicione próximo a janelas que recebam ao menos 4 horas de luz solar direta ou difusa.',
         'Regue apenas quando o solo estiver completamente seco (teste com o palito de madeira).',
       ],
-      author_id: demoUserId,
+      author_id: authorId,
       approved: true,
       upvotes: 5,
     },
@@ -82,7 +86,7 @@ async function seed() {
         'Quando o alarme tocar, faça uma pausa obrigatória de 5 minutos.',
         'A cada 4 ciclos (pomodoros), faça uma pausa mais longa de 15 a 30 minutos.',
       ],
-      author_id: demoUserId,
+      author_id: authorId,
       approved: true,
       upvotes: 15,
     }
@@ -104,8 +108,8 @@ async function seed() {
         // Inserir comentário inicial
         await supabase.from('comments').insert({
           tutorial_id: inserted.id,
-          user_id: demoUserId,
-          user_name: 'Serapeu Mestre',
+          user_id: authorId,
+          user_name: authorName,
           content: 'Dica extra: se tiver qualquer dúvida sobre esse passo a passo, deixe uma mensagem aqui!',
         })
       }
@@ -118,7 +122,7 @@ async function seed() {
       title: 'Como configurar Docker no Windows 11 com WSL2?',
       description: 'Gostaria de ver um tutorial passo a passo sobre como habilitar o WSL2 e instalar o Docker Desktop sem lentidão.',
       category: 'Tecnologia',
-      user_id: demoUserId,
+      user_id: authorId,
       upvotes: 4,
       answered: false,
     },
@@ -126,7 +130,7 @@ async function seed() {
       title: 'Receita simples de Bolo de Cenoura com cobertura crocante',
       description: 'Alguém pode compartilhar uma receita que não fique pesada e tenha aquela calda de chocolate que endurece?',
       category: 'Culinária',
-      user_id: demoUserId,
+      user_id: authorId,
       upvotes: 9,
       answered: false,
     }
