@@ -44,6 +44,7 @@ export interface TutorialRequest {
   description: string
   category: string
   createdAt: string
+  created_at?: string
   upvotes: number
   upvotedBy: string[]
   answered: boolean
@@ -78,9 +79,9 @@ export const initialTutorials: Tutorial[] = [
     title: "Instalando Node via NVM",
     description: "A forma mais segura de instalar Node no Linux.",
     steps: [
-      "Abra o terminal e execute: curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash",
-      "Reinicie o terminal ou execute: source ~/.bashrc",
-      "Instale a versão desejada: nvm install 20",
+      "Abra o terminal do Linux e baixe o instalador oficial do NVM:\n```bash\ncurl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash\n```",
+      "Recarregue as variáveis de ambiente do seu terminal para habilitar o comando `nvm`:\n```bash\nsource ~/.bashrc\n```",
+      "Instale e ative a versão LTS mais recente do Node.js executando:\n```bash\nnvm install --lts\nnode -v && npm -v\n```",
     ],
     authorId: "1",
     authorName: "Bob Expert",
@@ -144,6 +145,7 @@ export const initialRequests: TutorialRequest[] = [
     title: "Como configurar Docker no Windows?",
     description: "Preciso de um tutorial passo a passo para instalar e configurar Docker no Windows 11 com WSL2.",
     category: "Tecnologia",
+    created_at: "2025-11-22T10:00:00.000Z",
     createdAt: "22/11/2025",
     upvotes: 3,
     upvotedBy: ["4", "5", "6"],
@@ -156,6 +158,7 @@ export const initialRequests: TutorialRequest[] = [
     title: "Receita de bolo de chocolate sem glúten",
     description: "Alguém pode fazer um tutorial de bolo de chocolate que seja sem glúten e fácil de fazer?",
     category: "Culinária",
+    created_at: "2025-11-20T10:00:00.000Z",
     createdAt: "20/11/2025",
     upvotes: 7,
     upvotedBy: ["1", "2", "3", "5", "6", "7", "8"],

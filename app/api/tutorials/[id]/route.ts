@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceRoleClient } from '@/lib/supabase/server'
 import type { Tutorial, Comment } from '@/lib/types'
+import { initialTutorials } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,6 +13,16 @@ export async function GET(
     const { id } = await params
     if (!id) return NextResponse.json({ error: 'Missing tutorial id' }, { status: 400 })
 
+    // Se id não for UUID (ex: seed local '1' ou '2'), resolve via initialTutorials
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+    if (!isUuid) {
+      const fallback = initialTutorials.find((t) => t.id === id)
+      if (fallback) {
+        return NextResponse.json({ success: true, tutorial: fallback })
+      }
+      return NextResponse.json({ error: 'Tutorial não encontrado' }, { status: 404 })
+    }
+
     const supabase = createServiceRoleClient()
 
     const { data: tutorialData, error: tutorialError } = await supabase
@@ -22,6 +33,10 @@ export async function GET(
       .maybeSingle()
 
     if (tutorialError || !tutorialData) {
+      const fallback = initialTutorials.find((t) => t.id === id)
+      if (fallback) {
+        return NextResponse.json({ success: true, tutorial: fallback })
+      }
       return NextResponse.json({ error: 'Tutorial não encontrado' }, { status: 404 })
     }
 
