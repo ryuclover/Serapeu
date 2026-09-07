@@ -21,7 +21,7 @@ import {
   Bookmark,
   BookOpen,
 } from "lucide-react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useTheme } from "next-themes"
 import { useAuth } from "@/lib/auth-context"
 import { Logo } from "./logo"
@@ -30,7 +30,12 @@ export function Navbar() {
   const router = useRouter()
   const { user, tutorials } = useAuth()
   const { resolvedTheme, setTheme } = useTheme()
+  const [mounted, setMounted] = useState(false)
   const isDark = resolvedTheme === "dark"
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
   const [searchQuery, setSearchQuery] = useState("")
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const pendingCount = tutorials.filter((t) => !t.approved).length
@@ -80,7 +85,11 @@ export function Navbar() {
               className="p-2 rounded-full bg-amber-700/50 text-white hover:bg-amber-700/70 transition-colors"
               aria-label="Alternar tema"
             >
-              {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+              {mounted ? (
+                isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />
+              ) : (
+                <div className="w-5 h-5" />
+              )}
             </button>
 
             {user ? (
