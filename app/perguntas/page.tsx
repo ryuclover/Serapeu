@@ -42,26 +42,32 @@ export default function PerguntasPage() {
       return
     }
 
-    const { error } = await supabase
-      .from('tutorial_requests')
-      .insert({
-        user_id: user.id,
-        title: title.trim(),
-        description: description.trim(),
-        category
+    try {
+      const res = await fetch('/api/requests/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: title.trim(),
+          description: description.trim(),
+          category,
+        }),
       })
 
-    if (error) {
-      console.error(error)
-      alert('Erro ao enviar requisição. Tente novamente.')
-      return
-    }
+      const data = await res.json()
 
-    await refreshData()
-    setTitle("")
-    setDescription("")
-    setCategory(categories[0])
-    setIsCreating(false)
+      if (!res.ok) {
+        alert(data.error || 'Erro ao enviar requisição. Tente novamente.')
+        return
+      }
+
+      await refreshData()
+      setTitle("")
+      setDescription("")
+      setCategory(categories[0])
+      setIsCreating(false)
+    } catch (err: any) {
+      alert('Falha na comunicação com o servidor. Verifique sua conexão.')
+    }
   }
 
   const handleUpvote = async (requestId: string) => {

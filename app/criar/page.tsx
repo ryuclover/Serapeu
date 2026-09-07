@@ -173,27 +173,33 @@ export default function CreateTutorialPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-foreground mb-3">Passos</label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-foreground">Passos do Tutorial</label>
+                <span className="text-xs text-muted-foreground">
+                  Suporta blocos de código com <code className="text-amber-500 font-mono">```</code> e inline com <code className="text-amber-500 font-mono">`</code>
+                </span>
+              </div>
               <div className="space-y-3">
                 {steps.map((step, index) => (
-                  <div key={index} className="flex gap-3 animate-in fade-in slide-in-from-left-2 duration-200">
-                    <span className="flex-shrink-0 w-10 h-12 bg-amber-500/20 text-amber-600 dark:text-amber-400 rounded-xl flex items-center justify-center font-bold">
+                  <div key={index} className="flex gap-3 items-start animate-in fade-in slide-in-from-left-2 duration-200">
+                    <span className="flex-shrink-0 w-10 h-10 bg-amber-500/20 text-amber-600 dark:text-amber-400 rounded-xl flex items-center justify-center font-bold text-sm">
                       {index + 1}
                     </span>
-                    <input
-                      type="text"
+                    <textarea
                       value={step}
                       onChange={(e) => updateStep(index, e.target.value)}
-                      placeholder={`Descreva o passo ${index + 1}...`}
-                      className="flex-1 px-4 py-3 bg-input border border-border rounded-xl text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      placeholder={`Descreva o passo ${index + 1} (ex: comando no terminal, código ou explicação)...`}
+                      rows={2}
+                      className="flex-1 px-4 py-2.5 bg-input border border-border rounded-xl text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-amber-500 resize-y font-sans text-sm leading-relaxed"
                     />
                     {steps.length > 1 && (
                       <button
                         type="button"
                         onClick={() => removeStep(index)}
-                        className="p-3 text-destructive hover:bg-destructive/10 rounded-xl transition-colors"
+                        className="p-2.5 text-destructive hover:bg-destructive/10 rounded-xl transition-colors"
+                        title="Remover passo"
                       >
-                        <Trash2 className="w-5 h-5" />
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     )}
                   </div>

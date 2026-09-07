@@ -21,6 +21,7 @@ import {
 import type { Comment, Tutorial, UserType, TutorialProblem } from "@/lib/types"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/lib/auth-context"
+import { StepContent } from "@/components/step-content"
 
 interface TutorialTemplateProps {
   tutorial: Tutorial | null
@@ -132,8 +133,8 @@ function TutorialSteps({ steps }: { steps: string[] }) {
                 {index + 1}
               </div>
             </div>
-            <div className="flex-1 pt-2">
-              <p className="text-foreground leading-relaxed">{step}</p>
+            <div className="flex-1 pt-1 min-w-0">
+              <StepContent content={step} />
             </div>
           </div>
         ))}
