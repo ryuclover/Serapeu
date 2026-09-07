@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
       .from('tutorials')
       .select('*, profiles(name)', { count: 'exact' })
       .eq('approved', true)
+      .is('deleted_at', null)
 
     if (category) {
       query = query.eq('category', category)

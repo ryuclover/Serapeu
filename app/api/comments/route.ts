@@ -1,14 +1,19 @@
 import { NextResponse, NextRequest } from 'next/server'
 import { createRouteHandlerClient, createServiceRoleClient } from '@/lib/supabase/server'
+import { createCommentSchema } from '@/lib/validations'
+import { sanitizeText } from '@/lib/sanitize'
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { tutorialId, content } = body || {}
+    const parseResult = createCommentSchema.safeParse(body)
 
-    if (!tutorialId || !content) {
-      return NextResponse.json({ error: 'Invalid payload' }, { status: 400 })
+    if (!parseResult.success) {
+      const errorMsg = parseResult.error.errors[0]?.message || 'Payload inválido'
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
     }
+
+    const { tutorialId, content } = parseResult.data
 
     const supabaseAuth = createRouteHandlerClient(request)
 
@@ -28,10 +33,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Usuário banido não pode comentar' }, { status: 403 })
     }
 
-    const trimmedContent = typeof content === 'string' ? content.trim() : ''
-    if (!trimmedContent) {
-      return NextResponse.json({ error: 'Comentário não pode ser vazio' }, { status: 400 })
-    }
+    const sanitizedContent = sanitizeText(content)
 
     const { data, error } = await service
       .from('comments')
@@ -39,7 +41,7 @@ export async function POST(request: NextRequest) {
         tutorial_id: tutorialId,
         user_id: user.id,
         user_name: profile?.name || user.user_metadata?.name || user.email?.split('@')[0] || 'Usuário',
-        content: trimmedContent,
+        content: sanitizedContent,
       })
       .select('*')
       .single()
@@ -49,8 +51,8 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({ success: true, comment: data }, { status: 200 })
-  } catch (err: any) {
-    console.error('[Comments] Exception:', err)
-    return NextResponse.json({ error: err?.message || 'Server error' }, { status: 500 })
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Server error'
+    return NextResponse.json({ error: errorMsg }, { status: 500 })
   }
 }

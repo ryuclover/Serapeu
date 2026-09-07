@@ -13,13 +13,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Você não pode excluir a sua própria conta de administrador.' }, { status: 400 })
     }
 
-    // Delete profile row
-    const { error } = await service.from('profiles').delete().eq('id', id)
+    // Soft-delete profile row and anonymize public identifier to preserve knowledge contributions
+    const { error } = await service
+      .from('profiles')
+      .update({
+        deleted_at: new Date().toISOString(),
+        name: 'Usuário Removido',
+        banned: true,
+      })
+      .eq('id', id)
+
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
     return NextResponse.json({ ok: true })
-  } catch (err: any) {
-    return NextResponse.json({ error: err?.message || 'Unknown error' }, { status: 500 })
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Unknown error'
+    return NextResponse.json({ error: errorMsg }, { status: 500 })
   }
 }
 

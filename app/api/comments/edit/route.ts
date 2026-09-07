@@ -1,14 +1,19 @@
 import { NextResponse, NextRequest } from 'next/server'
 import { createRouteHandlerClient, createServiceRoleClient } from '@/lib/supabase/server'
+import { editCommentSchema } from '@/lib/validations'
+import { sanitizeText } from '@/lib/sanitize'
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { tutorialId, commentId, content } = body || {}
+    const parseResult = editCommentSchema.safeParse(body)
 
-    if (!tutorialId || !commentId || !content) {
-      return NextResponse.json({ error: 'Invalid payload' }, { status: 400 })
+    if (!parseResult.success) {
+      const errorMsg = parseResult.error.errors[0]?.message || 'Payload inválido'
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
     }
+
+    const { commentId, content } = parseResult.data
 
     const supabaseAuth = createRouteHandlerClient(request)
 
@@ -31,12 +36,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const { data, error } = await service.from('comments').update({ content }).eq('id', commentId).select('*').single()
+    const sanitizedContent = sanitizeText(content)
+
+    const { data, error } = await service
+      .from('comments')
+      .update({ content: sanitizedContent })
+      .eq('id', commentId)
+      .select('*')
+      .single()
+
     if (error || !data) return NextResponse.json({ error: error?.message || 'Failed to update comment' }, { status: 500 })
 
     return NextResponse.json({ success: true, comment: data })
-  } catch (err: any) {
-    console.error('[Comments/Edit] Exception:', err)
-    return NextResponse.json({ error: err?.message || 'Server error' }, { status: 500 })
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Server error'
+    return NextResponse.json({ error: errorMsg }, { status: 500 })
   }
 }
+

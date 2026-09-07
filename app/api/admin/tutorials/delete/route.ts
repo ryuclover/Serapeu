@@ -10,12 +10,17 @@ export async function POST(request: NextRequest) {
     const id = body?.id
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
 
-    const { error } = await service.from('tutorials').delete().eq('id', id)
+    const { error } = await service
+      .from('tutorials')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id)
+
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
     return NextResponse.json({ ok: true })
-  } catch (err: any) {
-    return NextResponse.json({ error: err?.message || 'Unknown error' }, { status: 500 })
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Unknown error'
+    return NextResponse.json({ error: errorMsg }, { status: 500 })
   }
 }
 

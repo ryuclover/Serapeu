@@ -18,7 +18,8 @@ export async function GET(
       .from('tutorials')
       .select('*, profiles(name)')
       .eq('id', id)
-      .single()
+      .is('deleted_at', null)
+      .maybeSingle()
 
     if (tutorialError || !tutorialData) {
       return NextResponse.json({ error: 'Tutorial não encontrado' }, { status: 404 })
@@ -28,6 +29,7 @@ export async function GET(
       .from('comments')
       .select('*')
       .eq('tutorial_id', id)
+      .is('deleted_at', null)
       .order('created_at', { ascending: true })
 
     const comments: Comment[] = (commentsData || []).map((c: any) => ({
