@@ -17,6 +17,7 @@ import {
   AlertTriangle,
   Send,
   X,
+  Trash2,
 } from "lucide-react"
 import type { Comment, Tutorial, UserType, TutorialProblem } from "@/lib/types"
 import { Button } from "@/components/ui/button"
@@ -52,8 +53,26 @@ function TutorialNotFound() {
 }
 
 function TutorialHeader({ tutorial }: { tutorial: Tutorial }) {
-  const { user, toggleSaveTutorial } = useAuth()
+  const router = useRouter()
+  const { user, toggleSaveTutorial, deleteTutorial } = useAuth()
   const isSaved = user?.savedTutorials?.includes(tutorial.id)
+  const [isDeleting, setIsDeleting] = useState(false)
+
+  const canDelete = Boolean(user && (user.id === tutorial.authorId || user.role === 'ADMIN'))
+
+  const handleDelete = async () => {
+    if (!window.confirm('Tem certeza que deseja excluir este tutorial? Esta ação não pode ser desfeita.')) {
+      return
+    }
+
+    setIsDeleting(true)
+    try {
+      await deleteTutorial(tutorial.id)
+      router.push('/perfil')
+    } catch (err) {
+      setIsDeleting(false)
+    }
+  }
 
   return (
     <div className="bg-card rounded-2xl p-6 shadow-sm border border-border animate-in fade-in slide-in-from-bottom-2 duration-300">
@@ -97,6 +116,16 @@ function TutorialHeader({ tutorial }: { tutorial: Tutorial }) {
         </Link>
 
         <div className="flex items-center gap-2">
+          {canDelete && (
+            <button
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className="p-2 hover:bg-destructive/10 text-destructive rounded-lg transition-colors disabled:opacity-50"
+              title="Excluir tutorial"
+            >
+              <Trash2 className="w-5 h-5" />
+            </button>
+          )}
           <button className="p-2 hover:bg-secondary rounded-lg transition-colors text-muted-foreground hover:text-foreground">
             <Share2 className="w-5 h-5" />
           </button>

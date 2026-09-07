@@ -21,6 +21,30 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ tutorials: [], error: tutorialsError.message }, { status: 200 })
     }
 
+    // Fetch comments
+    const { data: commentsData, error: commentsError } = await supabase
+      .from('comments')
+      .select('*')
+      .order('created_at', { ascending: false })
+
+    if (commentsError) {
+      logger.warn('Erro ao carregar comentários no painel admin', { error: commentsError.message })
+    }
+
+    const commentsByTutorial = ((commentsData || []) as any[]).reduce((acc: Record<string, any[]>, c: any) => {
+      if (!acc[c.tutorial_id]) acc[c.tutorial_id] = []
+      acc[c.tutorial_id].push({
+        id: c.id,
+        tutorialId: c.tutorial_id,
+        userId: c.user_id,
+        userName: c.user_name,
+        content: c.content,
+        createdAt: new Date(c.created_at).toLocaleDateString('pt-BR'),
+        deletedAt: c.deleted_at || null,
+      })
+      return acc
+    }, {})
+
     // Format tutorials
     const tutorials: (Tutorial & { deletedAt?: string | null })[] = ((tutorialsData || []) as any[]).map((t) => {
       const profile = Array.isArray(t.profiles) ? t.profiles[0] : t.profiles
@@ -35,7 +59,7 @@ export async function GET(request: NextRequest) {
         createdAt: new Date(t.created_at).toLocaleDateString('pt-BR'),
         approved: t.approved,
         upvotes: t.upvotes ?? 0,
-        comments: [],
+        comments: commentsByTutorial[t.id] || [],
         deletedAt: t.deleted_at || null,
       }
     })
@@ -61,15 +85,6 @@ export async function GET(request: NextRequest) {
       banned: Boolean(u.banned),
       deletedAt: u.deleted_at || null,
     }))
-
-    // Fetch comments
-    const { data: commentsData, error: commentsError } = await supabase
-      .from('comments')
-      .select('*')
-
-    if (commentsError) {
-      logger.warn('Erro ao carregar comentários no painel admin', { error: commentsError.message })
-    }
 
     // Fetch problems
     const { data: problemsData, error: problemsError } = await supabase

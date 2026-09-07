@@ -337,16 +337,7 @@ export default function AdminPage() {
     const tutorial = tutorials.find((t) => t.id === id)
 
     try {
-      const res = await fetch('/api/admin/tutorials/approve', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
-      })
-
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}))
-        throw new Error(json?.error || 'Erro ao aprovar tutorial')
-      }
+      await approveTutorial(id)
       if (tutorial) {
         addAdminLog({
           adminId: user.id,
@@ -376,17 +367,8 @@ export default function AdminPage() {
     if (!deleteConfirm.id) return
     setIsDeleting(true)
     try {
-      const res = await fetch('/api/admin/tutorials/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: deleteConfirm.id }),
-      })
-
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}))
-        throw new Error(json?.error || 'Erro ao excluir tutorial')
-      }
       const tutorial = tutorials.find((t) => t.id === deleteConfirm.id)
+      await deleteTutorial(deleteConfirm.id)
       if (tutorial) {
         addAdminLog({
           adminId: user.id,

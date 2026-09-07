@@ -390,13 +390,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const deleteTutorial = async (tutorialId: string) => {
     try {
-      const res = await fetch('/api/admin/tutorials/delete', {
+      const res = await fetch('/api/tutorials/delete', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: tutorialId }),
       })
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Erro ao excluir tutorial')
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Erro ao excluir tutorial')
       setTutorials(prev => prev.filter(t => t.id !== tutorialId))
-      toast.success('Tutorial excluído.')
+      toast.success('Tutorial excluído com sucesso.')
     } catch (error: any) {
       logError('deleteTutorial', error, { tutorialId })
       toast.error(getUserFriendlyErrorMessage(error) || 'Não foi possível excluir o tutorial.')
