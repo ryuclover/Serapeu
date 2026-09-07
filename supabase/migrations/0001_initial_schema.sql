@@ -168,6 +168,20 @@ CREATE POLICY "Authenticated users can report problems"
   ON public.tutorial_problems FOR INSERT
   WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users, tutorial authors or admins can update problems" ON public.tutorial_problems;
+CREATE POLICY "Users, tutorial authors or admins can update problems"
+  ON public.tutorial_problems FOR UPDATE
+  USING (
+    auth.uid() = user_id 
+    OR EXISTS (SELECT 1 FROM public.tutorials WHERE id = tutorial_id AND author_id = auth.uid())
+    OR EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'ADMIN')
+  );
+
+DROP POLICY IF EXISTS "Users or admins can delete problems" ON public.tutorial_problems;
+CREATE POLICY "Users or admins can delete problems"
+  ON public.tutorial_problems FOR DELETE
+  USING (auth.uid() = user_id OR EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'ADMIN'));
+
 -- Políticas de tutoriais salvos
 DROP POLICY IF EXISTS "Users can view their own saved tutorials" ON public.saved_tutorials;
 CREATE POLICY "Users can view their own saved tutorials"
@@ -203,15 +217,23 @@ CREATE POLICY "Users can remove their vote"
 -- Trigger de proteção: Impede usuários comuns de alterarem role e banned
 CREATE OR REPLACE FUNCTION public.protect_profile_roles()
 RETURNS TRIGGER AS $$
+DECLARE
+  jwt_role TEXT;
 BEGIN
-  IF (current_user != 'postgres' AND (current_setting('request.jwt.claims', true)::jsonb ->> 'role') != 'service_role') THEN
+  BEGIN
+    jwt_role := COALESCE(auth.role(), current_setting('request.jwt.claim.role', true), (current_setting('request.jwt.claims', true)::jsonb ->> 'role'));
+  EXCEPTION WHEN OTHERS THEN
+    jwt_role := COALESCE(auth.role(), 'authenticated');
+  END;
+
+  IF (current_user NOT IN ('postgres', 'supabase_admin') AND jwt_role != 'service_role') THEN
     NEW.role := OLD.role;
     NEW.banned := OLD.banned;
   END IF;
   NEW.updated_at := now() AT TIME ZONE 'UTC';
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 DROP TRIGGER IF EXISTS tr_protect_profile_roles ON public.profiles;
 CREATE TRIGGER tr_protect_profile_roles
@@ -229,7 +251,10 @@ BEGIN
     COALESCE(NEW.raw_user_meta_data ->> 'name', split_part(NEW.email, '@', 1)),
     'USER'
   )
-  ON CONFLICT (id) DO NOTHING;
+  ON CONFLICT (id) DO UPDATE
+  SET 
+    email = EXCLUDED.email,
+    name = COALESCE(EXCLUDED.name, public.profiles.name);
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
