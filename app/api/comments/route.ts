@@ -4,6 +4,7 @@ import { createCommentSchema } from '@/lib/validations'
 import { sanitizeText } from '@/lib/sanitize'
 import { logger } from '@/lib/logger'
 import { checkRateLimit, RATE_LIMIT_RULES, rateLimitResponse } from '@/lib/ratelimit'
+import { moderateContent } from '@/lib/moderation'
 
 export async function POST(request: NextRequest) {
   try {
@@ -40,6 +41,21 @@ export async function POST(request: NextRequest) {
 
     if (profile?.banned) {
       return NextResponse.json({ error: 'Usuário banido não pode comentar' }, { status: 403 })
+    }
+
+    // Moderação preventiva de conteúdo
+    const moderation = moderateContent(content)
+    if (!moderation.allowed) {
+      logger.warn('Comentário rejeitado pela moderação de conteúdo', {
+        userId: user.id,
+        tutorialId,
+        reason: moderation.reason,
+        category: moderation.category,
+      })
+      return NextResponse.json(
+        { error: moderation.reason || 'Comentário em desacordo com as diretrizes da plataforma.' },
+        { status: 422 }
+      )
     }
 
     const sanitizedContent = sanitizeText(content)

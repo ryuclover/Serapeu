@@ -4,6 +4,7 @@ import { createTutorialSchema } from '@/lib/validations'
 import { sanitizeText } from '@/lib/sanitize'
 import { logger } from '@/lib/logger'
 import { checkRateLimit, RATE_LIMIT_RULES, rateLimitResponse } from '@/lib/ratelimit'
+import { moderateContent } from '@/lib/moderation'
 
 export async function POST(request: NextRequest) {
   try {
@@ -46,6 +47,21 @@ export async function POST(request: NextRequest) {
     }
 
     const isAdmin = profile?.role === 'ADMIN'
+
+    // Moderação preventiva de conteúdo
+    const combinedContent = `${title}\n${description}\n${steps.join('\n')}`
+    const moderation = moderateContent(combinedContent)
+    if (!moderation.allowed) {
+      logger.warn('Tutorial rejeitado pela moderação de conteúdo', {
+        userId: user.id,
+        reason: moderation.reason,
+        category: moderation.category,
+      })
+      return NextResponse.json(
+        { error: moderation.reason || 'Conteúdo em desacordo com as diretrizes da plataforma.' },
+        { status: 422 }
+      )
+    }
 
     // Sanitização preventiva de textos contra ataques XSS
     const sanitizedTitle = sanitizeText(title)
