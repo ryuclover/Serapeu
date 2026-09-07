@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { BookOpen, ThumbsUp, Bookmark } from "lucide-react"
+import { BookOpen, ThumbsUp, Bookmark, Pin } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
 import type { Tutorial } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -26,7 +26,10 @@ export function TutorialCard({ tutorial, className }: TutorialCardProps) {
     <Link
       href={`/tutorial/${tutorial.id}`}
       className={cn(
-        "block bg-card rounded-xl p-5 shadow-sm border border-border hover:shadow-md transition-shadow animate-in fade-in slide-in-from-bottom-2 duration-300 relative",
+        "block bg-card rounded-xl p-5 shadow-sm border transition-all animate-in fade-in slide-in-from-bottom-2 duration-300 relative",
+        tutorial.pinned
+          ? "border-amber-500/50 bg-gradient-to-br from-amber-500/[0.04] to-transparent shadow-amber-500/5 hover:border-amber-500 hover:shadow-md"
+          : "border-border hover:shadow-md",
         className,
       )}
     >
@@ -42,7 +45,13 @@ export function TutorialCard({ tutorial, className }: TutorialCardProps) {
         <Bookmark className={cn("w-4 h-4", isSaved && "fill-amber-500 text-amber-500")} />
       </button>
 
-      <div className="flex items-center gap-2 text-sm mb-2">
+      <div className="flex flex-wrap items-center gap-2 text-sm mb-2">
+        {tutorial.pinned && (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-amber-500/15 border border-amber-500/30 text-amber-700 dark:text-amber-400 text-xs font-semibold rounded-full">
+            <Pin className="w-3 h-3 fill-current rotate-45" />
+            Fixado
+          </span>
+        )}
         <span className="text-amber-600 dark:text-amber-400 font-medium">{tutorial.authorName}</span>
         <span className="text-muted-foreground">•</span>
         <span className="text-muted-foreground">{tutorial.createdAt}</span>

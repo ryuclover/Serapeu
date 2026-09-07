@@ -253,6 +253,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             createdAt: new Date(t.created_at).toLocaleDateString('pt-BR'),
             approved: t.approved,
             upvotes: t.upvotes ?? 0,
+            pinned: t.id === "b44e3074-fe49-4a16-b007-e3a9db859171",
             comments: [],
           }
         })

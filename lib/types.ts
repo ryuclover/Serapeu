@@ -11,6 +11,8 @@ export interface UserType {
   votedTutorials?: string[] // IDs dos tutoriais votados
 }
 
+export const PINNED_TUTORIAL_ID = "b44e3074-fe49-4a16-b007-e3a9db859171"
+
 export interface Tutorial {
   id: string
   title: string
@@ -22,6 +24,7 @@ export interface Tutorial {
   createdAt: string
   approved: boolean
   upvotes: number
+  pinned?: boolean
   comments?: Comment[]
 }
 

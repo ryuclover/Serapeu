@@ -19,6 +19,14 @@ export async function GET() {
 
     if (tutorialsError) throw tutorialsError
 
+    const PINNED_ID = 'b44e3074-fe49-4a16-b007-e3a9db859171'
+    let sortedTutorials = tutorialsData || []
+    const pinnedIdx = sortedTutorials.findIndex((t: any) => t.id === PINNED_ID)
+    if (pinnedIdx > 0) {
+      const [pinnedItem] = sortedTutorials.splice(pinnedIdx, 1)
+      sortedTutorials.unshift(pinnedItem)
+    }
+
     // 2. Busca comentários ativos
     const { data: commentsData } = await supabase
       .from('comments')
@@ -57,7 +65,7 @@ export async function GET() {
 
     return NextResponse.json({
       success: true,
-      tutorials: tutorialsData || [],
+      tutorials: sortedTutorials,
       comments: commentsData || [],
       problems: problemsData || [],
       requests,

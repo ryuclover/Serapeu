@@ -77,7 +77,9 @@ export async function GET(request: NextRequest) {
       }, {} as Record<string, Comment[]>)
     }
 
-    const tutorials: Tutorial[] = (rawTutorials || []).map((t: any) => {
+    const PINNED_ID = 'b44e3074-fe49-4a16-b007-e3a9db859171'
+
+    let tutorials: Tutorial[] = (rawTutorials || []).map((t: any) => {
       const profile = Array.isArray(t.profiles) ? t.profiles[0] : t.profiles
       return {
         id: t.id,
@@ -90,9 +92,51 @@ export async function GET(request: NextRequest) {
         createdAt: new Date(t.created_at).toLocaleDateString('pt-BR'),
         approved: t.approved,
         upvotes: t.upvotes ?? 0,
+        pinned: t.id === PINNED_ID,
         comments: commentsByTutorial[t.id] || [],
       }
     })
+
+    // Se estiver na página 1 e sem busca específica que o exclua, garantir que o tutorial fixado venha no topo
+    if (page === 1) {
+      const pinnedIndex = tutorials.findIndex((t) => t.id === PINNED_ID)
+      if (pinnedIndex > 0) {
+        const [pinnedItem] = tutorials.splice(pinnedIndex, 1)
+        tutorials.unshift(pinnedItem)
+      } else if (pinnedIndex === -1 && !category && !search) {
+        // Se o tutorial fixado não veio na página 1, buscar ele individualmente para afixar no topo
+        const { data: pinnedData } = await supabase
+          .from('tutorials')
+          .select('*, profiles(name)')
+          .eq('id', PINNED_ID)
+          .eq('approved', true)
+          .is('deleted_at', null)
+          .maybeSingle()
+
+        if (pinnedData) {
+          const profile = Array.isArray(pinnedData.profiles) ? pinnedData.profiles[0] : pinnedData.profiles
+          const pinnedTutorial: Tutorial = {
+            id: pinnedData.id,
+            title: pinnedData.title,
+            description: pinnedData.description,
+            steps: pinnedData.steps || [],
+            authorId: pinnedData.author_id,
+            authorName: profile?.name || 'Usuário',
+            category: pinnedData.category,
+            createdAt: new Date(pinnedData.created_at).toLocaleDateString('pt-BR'),
+            approved: pinnedData.approved,
+            upvotes: pinnedData.upvotes ?? 0,
+            pinned: true,
+            comments: commentsByTutorial[pinnedData.id] || [],
+          }
+          tutorials.unshift(pinnedTutorial)
+          // Manter o limite da página
+          if (tutorials.length > limit) {
+            tutorials.pop()
+          }
+        }
+      }
+    }
 
     return NextResponse.json({
       success: true,

@@ -103,6 +103,14 @@ export default function AdminPage() {
         u.email.toLowerCase().includes(searchTerm.toLowerCase()),
     )
 
+  const getEnrichedUsers = () => {
+    const filtered = getFilteredUsers()
+    return filtered.map((u) => ({
+      ...u,
+      tutorialsCount: tutorials.filter((t) => t.authorId === u.id).length,
+    }))
+  }
+
   useEffect(() => {
     if (activeTab !== "users" || !currentUserId) {
       return
@@ -113,7 +121,7 @@ export default function AdminPage() {
     const initializeTabulator = async () => {
       if (!usersTableRef.current) return
 
-      const filteredUsersData = getFilteredUsers()
+      const enrichedUsersData = getEnrichedUsers()
       const tabulatorModule = await import("tabulator-tables")
       const Tabulator =
         (tabulatorModule as any).default ??
@@ -135,14 +143,26 @@ export default function AdminPage() {
         })[char] as string)
 
       const formatStatus = (isBanned: boolean) =>
-        `<span class="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
+        `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
           isBanned
-            ? "bg-red-500/15 text-red-600 dark:text-red-400"
-            : "bg-green-500/15 text-green-600 dark:text-green-400"
+            ? "bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/20"
+            : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
         }">${isBanned ? "Banido" : "Ativo"}</span>`
 
+      const formatRole = (role: string) => {
+        const isAdmin = role === "ADMIN"
+        return `<span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+          isAdmin
+            ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30"
+            : "bg-secondary text-secondary-foreground border border-border"
+        }">
+          ${isAdmin ? `<svg class="w-3 h-3 text-amber-500 shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>` : `<svg class="w-3 h-3 text-muted-foreground shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`}
+          ${isAdmin ? "Administrador" : "Membro"}
+        </span>`
+      }
+
       const table = new Tabulator(usersTableRef.current, {
-        data: filteredUsersData,
+        data: enrichedUsersData,
         layout: "fitColumns",
         placeholder: "Nenhum usuário encontrado",
         height: "100%",
@@ -155,24 +175,22 @@ export default function AdminPage() {
             title: "Usuário",
             field: "name",
             headerSort: true,
-            minWidth: 240,
+            minWidth: 220,
             formatter: (cell: any) => {
               const row = cell.getRow().getData()
               const initial = String(row.name || "U").charAt(0).toUpperCase()
               const name = escapeHtml(String(row.name || "Usuário"))
-              const roleIcon = row.role === "ADMIN" ? `<span class="ml-2 text-amber-500">★</span>` : ""
 
               return `
                 <div class="flex items-center gap-3">
-                  <div class="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-amber-500 to-orange-600 font-bold text-white">
+                  <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-amber-500 to-orange-600 font-bold text-white text-sm shadow-sm">
                     ${escapeHtml(initial)}
                   </div>
                   <div class="min-w-0">
-                    <div class="flex items-center gap-1 truncate font-medium text-foreground">
-                      <span class="truncate">${name}</span>
-                      ${roleIcon}
+                    <div class="truncate font-medium text-foreground text-sm">
+                      ${name}
                     </div>
-                    <div class="text-xs text-muted-foreground md:hidden">${escapeHtml(String(row.email || ""))}</div>
+                    <div class="text-xs text-muted-foreground md:hidden truncate">${escapeHtml(String(row.email || ""))}</div>
                   </div>
                 </div>
               `
@@ -181,22 +199,43 @@ export default function AdminPage() {
           {
             title: "Email",
             field: "email",
-            minWidth: 240,
+            minWidth: 200,
             responsive: 2,
-            formatter: (cell: any) => `<span class="text-muted-foreground">${escapeHtml(String(cell.getValue() || ""))}</span>`,
+            formatter: (cell: any) => `<span class="text-muted-foreground text-xs font-mono select-all">${escapeHtml(String(cell.getValue() || ""))}</span>`,
           },
           {
-            title: "Data",
+            title: "Cargo",
+            field: "role",
+            width: 150,
+            headerSort: true,
+            hozAlign: "left",
+            formatter: (cell: any) => formatRole(String(cell.getValue() || "USER")),
+          },
+          {
+            title: "Tutoriais",
+            field: "tutorialsCount",
+            width: 105,
+            headerSort: true,
+            hozAlign: "center",
+            formatter: (cell: any) => {
+              const count = Number(cell.getValue() || 0)
+              return `<span class="inline-flex items-center justify-center px-2 py-0.5 text-xs font-medium rounded-md ${
+                count > 0 ? "bg-amber-500/15 text-amber-600 dark:text-amber-400" : "text-muted-foreground bg-secondary/50"
+              }">${count}</span>`
+            },
+          },
+          {
+            title: "Data de Cadastro",
             field: "createdAt",
-            minWidth: 140,
+            minWidth: 130,
             responsive: 3,
-            formatter: (cell: any) => `<span class="text-muted-foreground">${escapeHtml(String(cell.getValue() || ""))}</span>`,
+            formatter: (cell: any) => `<span class="text-muted-foreground text-xs">${escapeHtml(String(cell.getValue() || "—"))}</span>`,
           },
           {
             title: "Status",
             field: "banned",
-            hozAlign: "left",
-            width: 120,
+            hozAlign: "center",
+            width: 100,
             formatter: (cell: any) => formatStatus(Boolean(cell.getValue())),
           },
           {
@@ -204,24 +243,24 @@ export default function AdminPage() {
             hozAlign: "right",
             headerSort: false,
             widthGrow: 2,
-            minWidth: 220,
+            minWidth: 230,
             formatter: (cell: any) => {
               const row = cell.getRow().getData()
               const isCurrentUser = row.id === currentUserId
               return `
-                <div class="flex justify-end gap-2">
-                  <button data-action="${row.banned ? "unban" : "ban"}" class="inline-flex items-center rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-secondary disabled:opacity-50" ${
-                    isCurrentUser ? "disabled" : ""
+                <div class="flex justify-end gap-1.5">
+                  <button data-action="${row.banned ? "unban" : "ban"}" class="inline-flex items-center rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground hover:bg-secondary transition-colors disabled:opacity-50" ${
+                    isCurrentUser ? "disabled title='Não é possível banir a própria conta'" : ""
                   }>
                     ${row.banned ? "Desbanir" : "Banir"}
                   </button>
-                  <button data-action="${row.role === "ADMIN" ? "demote" : "promote"}" class="inline-flex items-center rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-secondary disabled:opacity-50" ${
-                    isCurrentUser ? "disabled" : ""
+                  <button data-action="${row.role === "ADMIN" ? "demote" : "promote"}" class="inline-flex items-center rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground hover:bg-secondary transition-colors disabled:opacity-50" ${
+                    isCurrentUser ? "disabled title='Não é possível alterar seu próprio cargo'" : ""
                   }>
                     ${row.role === "ADMIN" ? "Rebaixar" : "Promover"}
                   </button>
-                  <button data-action="delete" class="inline-flex items-center rounded-md bg-red-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50" ${
-                    isCurrentUser ? "disabled" : ""
+                  <button data-action="delete" class="inline-flex items-center rounded-md bg-red-600/90 hover:bg-red-600 px-2.5 py-1 text-xs font-medium text-white transition-colors disabled:opacity-50" ${
+                    isCurrentUser ? "disabled title='Não é possível excluir a própria conta'" : ""
                   }>
                     Excluir
                   </button>
@@ -265,12 +304,12 @@ export default function AdminPage() {
         usersTabulatorRef.current = null
       }
     }
-  }, [activeTab, users, searchTerm, currentUserId])
+  }, [activeTab, users, tutorials, searchTerm, currentUserId])
 
   useEffect(() => {
     if (activeTab !== "users" || !usersTabulatorRef.current) return
-    usersTabulatorRef.current.replaceData(getFilteredUsers())
-  }, [users, searchTerm, activeTab])
+    usersTabulatorRef.current.replaceData(getEnrichedUsers())
+  }, [users, tutorials, searchTerm, activeTab])
 
   // Busca os dados completos de admin ao entrar na página
   useEffect(() => {
