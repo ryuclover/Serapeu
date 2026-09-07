@@ -153,7 +153,11 @@ export function Navbar() {
               className="p-2 rounded-full bg-amber-700/50 text-white hover:bg-amber-700/70 transition-colors"
               aria-label="Alternar tema"
             >
-              {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+              {mounted ? (
+                isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />
+              ) : (
+                <div className="w-5 h-5" />
+              )}
             </button>
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}

@@ -77,7 +77,7 @@ interface AuthContextType {
 
 // ─── Inicialização do cliente (singleton) ────────────────────────────────────
 
-validateSupabaseConfig()
+const hasSupabaseConfig = validateSupabaseConfig()
 const AuthContext = createContext<AuthContextType | null>(null)
 
 // Helpers para cache leve de perfil na UI
@@ -296,7 +296,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setTutorials(initialTutorials)
     }
 
-    // Usuários (profiles) - Somente admins precisam ver isso, mas tenta buscar
+    if (!hasSupabaseConfig) return
+
+    // Usuários (profiles)
     const { data: usersData, error: usersError } = await supabase
       .from('profiles').select('*').order('created_at', { ascending: false })
     if (!usersError && usersData) {

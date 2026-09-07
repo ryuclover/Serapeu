@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/TypeScript_5-007ACC?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/Supabase_SSR-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white" alt="Supabase" />
   <img src="https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white" alt="PostgreSQL" />
-  <img src="https://img.shields.io/badge/Vitest-21_Passed-6E9F18?style=for-the-badge&logo=vitest&logoColor=white" alt="Vitest Tests" />
+  <img src="https://img.shields.io/badge/Vitest-22_Passed-6E9F18?style=for-the-badge&logo=vitest&logoColor=white" alt="Vitest Tests" />
   <img src="https://img.shields.io/badge/CI%2FCD-GitHub_Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white" alt="GitHub Actions" />
 </p>
 
@@ -23,6 +23,8 @@
 ## 📸 Galeria do Projeto
 
 Uma experiência de usuário fluida, responsiva e com suporte nativo a tema claro e escuro.
+
+Capturas atualizadas em 07/09/2026, feitas no build de produção em tema escuro, com dados demonstrativos e resolução de 2880 × 2000 pixels.
 
 ### 1. Leitura de Tutoriais com Blocos de Código & Cópia com 1 Clique
 Visualização moderna de passos técnicos com realce de sintaxe em terminal dark, badges de comandos inline e botão de copiar integrado.
@@ -99,7 +101,7 @@ O Serapeu foi submetido a uma auditoria técnica profunda de nível sênior, res
 | **Estilização & Design** | [Tailwind CSS](https://tailwindcss.com/) + [Radix UI](https://www.radix-ui.com/) + [Lucide Icons](https://lucide.dev/) |
 | **Gestão de Tema** | [next-themes](https://github.com/pacocoursey/next-themes) (Light / Dark mode desacoplado) |
 | **Validação de Dados** | [Zod](https://zod.dev/) |
-| **Testes Automatizados** | [Vitest](https://vitest.dev/) (21 testes unitários) |
+| **Testes Automatizados** | [Vitest](https://vitest.dev/) (22 testes unitários) |
 | **Integração Contínua** | [GitHub Actions](https://github.com/features/actions) |
 
 ---
@@ -125,9 +127,11 @@ npm test
    ✓ Moderação contra domínios de phishing e IP-grabbers
    ✓ Moderação contra linguagem abusiva e spam de links
 
- Test Files  2 passed (2)
-      Tests  21 passed (21)
-   Duration  301ms
+ ✓ tests/unit/demo-data.test.ts (1 test)
+   ✓ Contrato dos dados demonstrativos: autores, datas, comentários e votos
+
+ Test Files  3 passed (3)
+      Tests  22 passed (22)
 ```
 
 ---

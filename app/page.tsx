@@ -1,5 +1,5 @@
 "use client"
-import { useState, useEffect, useCallback } from "react"
+import { Suspense, useState, useEffect, useCallback } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { TrendingUp, MessageCircle, PlusCircle, BookOpen, Loader2 } from "lucide-react"
@@ -10,6 +10,14 @@ import { Pagination } from "@/components/pagination"
 import { Button } from "@/components/ui/button"
 
 export default function HomePage() {
+  return (
+    <Suspense fallback={<div className="flex justify-center py-16"><Loader2 className="h-8 w-8 animate-spin" aria-label="Carregando tutoriais" /></div>}>
+      <HomeContent />
+    </Suspense>
+  )
+}
+
+function HomeContent() {
   const searchParams = useSearchParams()
   const searchQuery = searchParams.get("search") || ""
   const { user } = useAuth()

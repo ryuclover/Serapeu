@@ -74,10 +74,28 @@ export async function GET() {
     logger.warn('Retornando dados padrão de fallback (ambiente sem conexão remota ativa)', { error: error?.message })
     return NextResponse.json({
       success: true,
-      tutorials: initialTutorials,
-      comments: [],
+      tutorials: initialTutorials.map((tutorial) => ({
+        ...tutorial,
+        author_id: tutorial.authorId,
+        profiles: { name: tutorial.authorName },
+        created_at: tutorial.createdAt.split('/').reverse().join('-') + 'T12:00:00Z',
+      })),
+      comments: initialTutorials.flatMap((tutorial) => (tutorial.comments || []).map((comment) => ({
+        id: comment.id,
+        tutorial_id: comment.tutorialId,
+        user_id: comment.userId,
+        user_name: comment.userName,
+        content: comment.content,
+        created_at: comment.createdAt.split('/').reverse().join('-') + 'T12:00:00Z',
+      }))),
       problems: [],
-      requests: initialRequests,
+      requests: initialRequests.map((request) => ({
+        ...request,
+        user_id: request.userId,
+        profiles: { name: request.userName },
+        upvoted_by: request.upvotedBy,
+        answered_tutorial_id: request.answeredTutorialId,
+      })),
     })
   }
 }

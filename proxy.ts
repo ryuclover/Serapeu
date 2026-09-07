@@ -13,7 +13,7 @@ import { updateSession } from '@/lib/supabase/middleware'
  * - /perfil (apenas autenticado)
  * - /salvos (apenas autenticado)
  */
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   return await updateSession(request)
 }
 

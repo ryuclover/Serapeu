@@ -1,10 +1,5 @@
 "use client"
 
-import { Geist, Geist_Mono } from "next/font/google"
-
-const geistSans = Geist({ subsets: ["latin"] })
-const geistMono = Geist_Mono({ subsets: ["latin"] })
-
 export default function GlobalError({
   error,
   reset,
@@ -14,7 +9,7 @@ export default function GlobalError({
 }) {
   return (
     <html lang="pt-BR" suppressHydrationWarning>
-      <body className={`${geistSans.className} bg-background text-foreground min-h-screen flex flex-col`}>
+      <body className="font-sans bg-background text-foreground min-h-screen flex flex-col">
         <div className="flex-1 flex items-center justify-center p-4">
           <div className="text-center max-w-md">
             <div className="flex justify-center mb-6">
@@ -42,7 +37,7 @@ export default function GlobalError({
             </p>
 
             {error.digest && (
-              <p className={`text-xs text-muted-foreground mb-4 ${geistMono.className} bg-muted px-3 py-2 rounded-md`}>
+              <p className="text-xs text-muted-foreground mb-4 font-mono bg-muted px-3 py-2 rounded-md">
                 Código: {error.digest}
               </p>
             )}
